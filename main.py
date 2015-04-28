@@ -39,6 +39,7 @@ import xmlrpclib
 import logging
 import urllib2
 import random
+from stoneleaf import _normalize
 
 try:
     import json
@@ -324,7 +325,7 @@ class Model(object):
                 if isinstance(result, list) and len(result) > 0 and "id" in result[0]:
                     index = {}
                     for r in result:
-                        index[r['id']] = r
+                        index[r['id']] = _normalize(r)
                     result = [index[x] for x in args[0] if x in index]
             self.__logger.debug('result: %r', result)
             return result
