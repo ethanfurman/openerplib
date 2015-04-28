@@ -312,6 +312,11 @@ class Model(object):
             """
             self.connection.check_login(False)
             self.__logger.debug(args)
+            if method == 'create':
+                # get the default values, and update them from the passed in values
+                default_values = self.default_get(self.fields_get().keys())
+                default_values.update(args[0])
+                args = (default_values, ) = args[1:]
             result = self.connection.get_service('object').execute_kw(
                                                     self.connection.database,
                                                     self.connection.user_id,
