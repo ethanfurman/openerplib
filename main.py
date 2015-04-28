@@ -37,9 +37,13 @@ Code repository: https://code.launchpad.net/~niv-openerp/openerp-client-lib/trun
 
 import xmlrpclib
 import logging
-import json
 import urllib2
 import random
+
+try:
+    import json
+except ImportError:
+    import simplejson as json 
 
 _logger = logging.getLogger(__name__)
 
@@ -259,7 +263,10 @@ class Connection(object):
 
         :param model_name: The name of the model.
         """
-        return Model(self, model_name)
+        model = Model(self, model_name)
+        # make sure model is valid
+        model.search([('id','=',0)])
+        return model
 
     def get_service(self, service_name):
         """
@@ -298,7 +305,7 @@ class Model(object):
 
         :param method: The method for the linked model (search, read, write, unlink, create, ...)
         """
-        def proxy(*args, **kw):
+        def proxy(*args, **kwds):
             """
             :param args: A list of values for the method
             """
@@ -310,7 +317,9 @@ class Model(object):
                                                     self.connection.password,
                                                     self.model_name,
                                                     method,
-                                                    args, kw)
+                                                    args,
+                                                    kwds
+                                                    )
             if method == "read":
                 if isinstance(result, list) and len(result) > 0 and "id" in result[0]:
                     index = {}
@@ -360,7 +369,7 @@ def get_connector(hostname=None, protocol="xmlrpc", port="auto"):
         raise ValueError("You must choose xmlrpc, xmlrpcs, jsonrpc or jsonrpcs")
 
 def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
-                 login=None, password=None, user_id=None):
+                 login=None, password=None, user_id=None, skip_check=False):
     """
     A shortcut method to easily create a connection to a remote OpenERP server.
 
@@ -374,5 +383,8 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
     :param user_id: The user id is a number identifying the user. This is only useful if you
     already know it, in most cases you don't need to specify it.
     """
-    return Connection(get_connector(hostname, protocol, port), database, login, password, user_id)
-        
+    connection = Connection(get_connector(hostname, protocol, port), database, login, password, user_id)
+    # if necessary paramaters given, ensure valid connection unless skip_check is True
+    if hostname and database and login and password and not skip_check:
+        connection.get_model('res.users').search([('id','=',0)])
+    return connection        
