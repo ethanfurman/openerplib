@@ -28,7 +28,7 @@
 # 
 ##############################################################################
 
-import datetime
+from dbf import Date, DateTime, Time
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
@@ -38,33 +38,33 @@ DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
 
 def str_to_datetime(str):
     """
-    Converts a string to a datetime object using OpenERP's
-    datetime string format (exemple: '2011-12-01 15:12:35').
+    Converts a string to a DateTime object using OpenERP's
+    DateTime string format (exemple: '2011-12-01 15:12:35').
     
-    No timezone information is added, the datetime is a naive instance, but
+    No timezone information is added, the DateTime is a naive instance, but
     according to OpenERP 6.1 specification the timezone is always UTC.
     """
     if not str:
         return str
-    return datetime.datetime.strptime(str.split(".")[0], DEFAULT_SERVER_DATETIME_FORMAT)
+    return DateTime.strptime(str.split(".")[0], DEFAULT_SERVER_DATETIME_FORMAT)
 
 def str_to_date(str):
     """
-    Converts a string to a date object using OpenERP's
+    Converts a string to a Date object using OpenERP's
     date string format (exemple: '2011-12-01').
     """
     if not str:
         return str
-    return datetime.datetime.strptime(str, DEFAULT_SERVER_DATE_FORMAT).date()
+    return Date.strptime(str, DEFAULT_SERVER_DATE_FORMAT)
 
 def str_to_time(str):
     """
-    Converts a string to a time object using OpenERP's
+    Converts a string to a Time object using OpenERP's
     time string format (exemple: '15:12:35').
     """
     if not str:
         return str
-    return datetime.datetime.strptime(str.split(".")[0], DEFAULT_SERVER_TIME_FORMAT).time()
+    return Time.strptime(str.split(".")[0], DEFAULT_SERVER_TIME_FORMAT)
 
 def datetime_to_str(obj):
     """
