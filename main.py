@@ -316,7 +316,7 @@ class Model(object):
                 # get the default values, and update them from the passed in values
                 default_values = self.default_get(self.fields_get().keys())
                 default_values.update(args[0])
-                args = (default_values, ) = args[1:]
+                args = (default_values, ) + args[1:]
             result = self.connection.get_service('object').execute_kw(
                                                     self.connection.database,
                                                     self.connection.user_id,
@@ -393,4 +393,14 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
     # if necessary paramaters given, ensure valid connection unless skip_check is True
     if hostname and database and login and password and not skip_check:
         connection.get_model('res.users').search([('id','=',0)])
-    return connection        
+    return connection
+
+
+class OpenERP(object):
+    
+    def __init__(self, host, database=None, login=None, password=None, protocol="xmlrpc", port='auto'):
+        self.connection = conn = get_connection(host, protocol, port, database, login, password)
+
+    def __getattr__(self, model):
+        setattr(self, model, self.connection.get_model(model))
+
