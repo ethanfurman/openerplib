@@ -204,7 +204,7 @@ class AttrDict(object):
     def __repr__(yo):
         if not yo:
             return "AttrDict()"
-        return "AttrDict([%s])" % ', '.join(["(%r, %r)" % (x, yo._values[x]) for x in yo])
+        return "AttrDict([%s])" % ', '.join(["(%s=%r)" % (x, yo._values[x]) for x in yo])
 
     def __str__(yo):
         return '\n'.join(["%s=%r" % (x, yo._values[x]) for x in yo])
