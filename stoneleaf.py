@@ -147,7 +147,11 @@ class AttrDict(object):
         return other == yo._values
 
     def __ne__(yo, other):
-        return not yo == other
+        result = yo == other
+        if result is NotImplemented:
+            return result
+        else:
+            return not result
 
     def __getitem__(yo, name):
         if name in yo._values:
@@ -186,6 +190,8 @@ class AttrDict(object):
             object.__setattr__(yo, name, value)
         elif isinstance(name, basestring) and name[0:1] == '_':
             raise KeyError("illegal attribute name: %s" % name)
+        elif not isinstance(name, basestring):
+            raise ValueError('attribute names must be str, not %r' % type(name))
         else:
             if name not in yo._values:
                 yo._order.append(name)
@@ -196,6 +202,8 @@ class AttrDict(object):
             object.__setattr__(yo, name, value)
         elif name[0] == '_' or name in yo._illegal:
             raise AttributeError("illegal attribute name: %s" % name)
+        elif not isinstance(name, basestring):
+            raise ValueError('attribute names must be str, not %r' % type(name))
         else:
             if name not in yo._values:
                 yo._order.append(name)
