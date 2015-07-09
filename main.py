@@ -314,8 +314,25 @@ class Model(object):
             self.__logger.debug(args)
             if method == 'create':
                 # get the default values, and update them from the passed in values
-                default_values = self.default_get(self.fields_get().keys())
+                fields = self.fields_get()
+                default_values = self.default_get(fields.keys())
                 new_values = kwds.pop('values', None) or args[0]
+                # take special care with x2many fields 'cause they come to us as a list of
+                # ids which we must transform into a list of delete and add commands such as
+                # [(3, id1), (4, id1), (3, id2), (4, id2), ...]
+                manies = [
+                        k for (k, v) in fields.items()
+                        if v['type'] in ('one2many', 'many2many')
+                           and k in default_values
+                           and k not in new_values
+                           and default_values[k]
+                        ]
+                for many in manies:
+                    new_many = []
+                    for id in default_values[many]:
+                        new_many.append((3, id))
+                        new_many.append((4, id))
+                    default_values[many] = new_many
                 default_values.update(new_values)
                 args = (default_values, ) + args[1:]
             result = self.connection.get_service('object').execute_kw(
