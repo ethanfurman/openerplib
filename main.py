@@ -346,10 +346,11 @@ class Model(object):
                                                     )
             if method == "read":
                 if isinstance(result, list) and len(result) > 0 and "id" in result[0]:
+                    ids = kwds.pop('ids', None) or args[0]
                     index = {}
                     for r in result:
                         index[r['id']] = _normalize(r)
-                    result = [index[x] for x in args[0] if x in index]
+                    result = [index[x] for x in ids if x in index]
             self.__logger.debug('result: %r', result)
             return result
         return proxy
