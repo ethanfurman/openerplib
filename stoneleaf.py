@@ -26,7 +26,7 @@
 # 
 ##############################################################################
 
-def get_records(connection, model=None, domain=[(1,'=',1)], fields=[], max_qty=None, ids=None):
+def get_records(connection, model=None, domain=[(1,'=',1)], fields=[], max_qty=None, ids=None, skip_fields=[]):
     """get records from model
 
     (connection, model):  (model_obj, None) or (connection, model_str)
@@ -43,6 +43,11 @@ def get_records(connection, model=None, domain=[(1,'=',1)], fields=[], max_qty=N
         # connection is a connection
         # model is a string, get the real thing
         model = connection.get_model(model)
+    # if skip_fields, build actual fields list
+    if skip_fields:
+        if fields:
+            raise ValueError('Cannot specify both fields and skip_fields')
+        fields = [f for f in model.fields_get_keys() if f not in skip_fields]
     single = False
     if ids:
         if isinstance(ids, (int,long)):
