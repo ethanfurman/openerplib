@@ -101,8 +101,7 @@ class AttrDict(object):
             # next, see if it's a mapping
             try:
                 arg = arg.items()
-                if not needs_sorted:
-                    needs_sorted = isinstance(arg, OrderedDict)
+                needs_sorted = True
             except (AttributeError, ):
                 pass
             # now iterate over it
