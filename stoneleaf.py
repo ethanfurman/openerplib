@@ -219,7 +219,17 @@ class AttrDict(object):
         return "AttrDict([%s])" % ', '.join(["(%r, %r)" % (x, yo._values[x]) for x in yo])
 
     def __str__(yo):
-        return '\n'.join(["%s=%r" % (x, yo._values[x]) for x in yo])
+        lines = ['{']
+        for k, v in sorted(yo._values.items()):
+            if isinstance(v, yo.__class__):
+                lines.append(' %s = {' % k)
+                for line in str(v).split('\n')[1:-1]:
+                    lines.append('     %s' % line)
+                lines.append('      }')
+            else:
+                lines.append(' %s = %r' % (k, v))
+        lines.append(' }')
+        return '\n'.join(lines)
 
     def keys(yo):
         return yo._order[:]
