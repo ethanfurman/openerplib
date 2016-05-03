@@ -3,16 +3,16 @@
 #
 # Copyright (C) 2015 Ethan Furman
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met: 
-# 
+# modification, are permitted provided that the following conditions are met:
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
-# list of conditions and the following disclaimer. 
+# list of conditions and the following disclaimer.
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
-# and/or other materials provided with the distribution. 
-# 
+# and/or other materials provided with the distribution.
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 # ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 # WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -23,8 +23,11 @@
 # ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-# 
+#
 ##############################################################################
+
+import os
+import sys
 
 def get_records(connection, model=None, domain=[(1,'=',1)], fields=[], max_qty=None, ids=None, skip_fields=[]):
     """get records from model
@@ -243,3 +246,165 @@ class AttrDict(object):
             return default
         else:
             raise KeyError('key not found: %r' % name)
+
+
+class EmbeddedNewlineError(ValueError):
+    "Embedded newline found in a quoted field"
+
+    def __init__(self, state):
+        super(EmbeddedNewlineError, self).__init__()
+        self.state = state
+
+
+class OpenERPcsv(object):
+    """csv file in OE format (utf-8, "-encapsulated, comma seperated)
+    returns a list of str, bool, float, and int types, one row for each record
+    Note: discards first record -- make sure it is the header!"""
+
+    def __init__(self, filename):
+        with open(filename) as source:
+            self.data = source.readlines()
+        self.row = 0        # skip header during iteration
+        header = self.header = self._convert_line(self.data[0])
+        self.types = []
+        known = globals()
+        for name in header:
+            if '%' in name:
+                name, type = name.split('%')
+                if type in known:
+                    self.types.append(known[type])
+                else:
+                    func = known['__builtins__'].get(type, None)
+                    if func is not None:
+                        self.types.append(func)
+                    else:
+                        raise ValueError("unknown type: %s" % type)
+            else:
+                self.types.append(None)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):     # just plain 'next' in python 2
+        try:
+            self.row += 1
+            line = self.data[self.row]
+        except IndexError:
+            raise StopIteration
+        items = self._convert_line(line)
+        if len(self.types) != len(items):
+            raise ValueError('field/header count mismatch on line: %d' % self.row)
+        result = []
+        for item, type in zip(items, self.types):
+            if type is not None:
+                result.append(type(item))
+            elif item.lower() in ('true','yes','on','t','y'):
+                result.append(True)
+            elif item.lower() in ('false','no','off','f','n'):
+                result.append(False)
+            else:
+                for type in (int, float, lambda s: str(s.strip('"'))):
+                    try:
+                        result.append(type(item))
+                    except Exception:
+                        pass
+                    else:
+                        break
+                else:
+                    result.append(None)
+        return result
+    next = __next__
+
+    @staticmethod
+    def _convert_line(line, prev_state=None):
+        line = line.strip() + ','
+        if prev_state:
+            fields = prev_state.fields
+            word = prev_state.word
+            encap = prev_state.encap
+            skip_next = prev_state.skip_next
+        else:
+            fields = []
+            word = []
+            encap = False
+            skip_next = False
+        for i, ch in enumerate(line):
+            if skip_next:
+                skip_next = False
+                continue
+            if encap:
+                if ch == '"' and line[i+1:i+2] == '"':
+                    word.append(ch)
+                    skip_next = True
+                elif ch =='"' and line[i+1:i+2] in ('', ','):
+                    while word[-1] == '\\n':
+                        word.pop()
+                    word.append(ch)
+                    encap = False
+                elif ch == '"':
+                    raise ValueError(
+                            'invalid char following ": <%s> (should be comma or double-quote)\n%r\n%s^'
+                            % (ch, line, ' ' * i)
+                            )
+                else:
+                    word.append(ch)
+            else:
+                if ch == ',':
+                    fields.append(''.join(word))
+                    word = []
+                elif ch == '"':
+                    if word: # embedded " are not allowed
+                        raise ValueError('embedded quotes not allowed:\n%s\n%s' % (line[:i], line))
+                    encap = True
+                    word.append(ch)
+                else:
+                    word.append(ch)
+        if encap:
+            word.pop()  # discard trailing comma
+            if len(word) > 1:  # more than opening quote
+                word[-1] = '\\n'
+            current_state = PropertyDict(fields=fields, word=word, encap=encap, skip_next=skip_next)
+            raise EmbeddedNewlineError(state=current_state)
+        return fields
+
+
+class SchroedingerFile(object):
+    "loops through lines of filename *if it exists*; deletes file when finished"
+
+    filename = None
+    ctxmgr = None
+
+    def __init__(self, filename):
+        try:
+            self.data = open(filename)
+            self.filename = filename
+        except IOError:
+            self.data = iter([])
+
+    def __enter__(self):
+        self.ctxmgr = True
+        return self
+
+    def __exit__(self, *args):
+        if self.filename:
+            try:
+                os.remove(self.filename)
+            except OSError:
+                pass
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):     # just plain 'next' in python 2
+        try:
+            return next(self.data)
+        except StopIteration:
+            exc = sys.exc_info()[1]
+            if self.filename and not self.ctxmgr:
+                try:
+                    os.remove(self.filename)
+                except OSError:
+                    pass
+            self.data = iter([])
+            raise exc
+    next = __next__
