@@ -335,6 +335,14 @@ class Model(object):
                     default_values[many] = new_many
                 default_values.update(new_values)
                 args = (default_values, ) + args[1:]
+            if method == 'search':
+                # 'domain' keyword is actualy 'args' (stupid), so switch 'domain' to 'args'
+                # if present
+                if 'domain' in kwds and 'args' in kwds:
+                    raise ValueError('cannot specify both "args" and "domain"')
+                elif 'domain' in kwds:
+                    kwds['args'] = kwds['domain']
+                    del kwds['domain']
             result = self.connection.get_service('object').execute_kw(
                                                     self.connection.database,
                                                     self.connection.user_id,
