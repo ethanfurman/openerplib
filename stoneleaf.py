@@ -370,7 +370,7 @@ class OpenERPcsv(object):
             word.pop()  # discard trailing comma
             if len(word) > 1:  # more than opening quote
                 word[-1] = '\\n'
-            current_state = PropertyDict(fields=fields, word=word, encap=encap, skip_next=skip_next)
+            current_state = AttrDict(fields=fields, word=word, encap=encap, skip_next=skip_next)
             raise EmbeddedNewlineError(state=current_state)
         return fields
 
