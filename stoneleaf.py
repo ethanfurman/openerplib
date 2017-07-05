@@ -32,7 +32,11 @@ import sys
 class MissingRecord(Exception):
     "records not found during id search"
 
-def get_records(connection, model=None, domain=[(1,'=',1)], fields=[], max_qty=None, ids=None, skip_fields=[]):
+def get_records(
+        connection, model=None, domain=[(1,'=',1)], fields=[],
+        offset=0, limit=None, order=None,
+        max_qty=None, ids=None, skip_fields=[],
+        ):
     """get records from model
 
     (connection, model):  (model_obj, None) or (connection, model_str)
@@ -59,13 +63,14 @@ def get_records(connection, model=None, domain=[(1,'=',1)], fields=[], max_qty=N
         if isinstance(ids, (int,long)):
             single = True
             ids = [ids]
-        result = model.search_read(domain=[('id','in',ids)], fields=fields)
+        result = model.search_read(domain=[('id','in',ids)], offset=offset, limit=limit, order=order, fields=fields)
         if len(result) != len(ids):
             found = set([r.id for r in result])
             missing = sorted([i for i in ids if i not in found])
-            raise MissingRecord('missing record(s): %s' % ', '.join([str(m) for m in missing]))
+            if missing:
+                raise MissingRecord('missing record(s): %s' % ', '.join([str(m) for m in missing]))
     else:
-        result = model.search_read(domain=domain, fields=fields)
+        result = model.search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order)
     if max_qty is not None and len(result) > max_qty:
         raise ValueError('no more than %s records expected, but received %s' % (max_qty, len(result)))
     result = [_normalize(r) for r in result]
