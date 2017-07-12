@@ -26,8 +26,14 @@
 #
 ##############################################################################
 
-import os
-import sys
+import os as _os
+import sys as _sys
+
+DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
+DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
+DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
+    DEFAULT_SERVER_DATE_FORMAT,
+    DEFAULT_SERVER_TIME_FORMAT)
 
 class MissingRecord(Exception):
     "records not found during id search"
@@ -400,7 +406,7 @@ class SchroedingerFile(object):
     def __exit__(self, *args):
         if self.filename:
             try:
-                os.remove(self.filename)
+                _os.remove(self.filename)
             except OSError:
                 pass
 
@@ -411,10 +417,10 @@ class SchroedingerFile(object):
         try:
             return next(self.data)
         except StopIteration:
-            exc = sys.exc_info()[1]
+            exc = _sys.exc_info()[1]
             if self.filename and not self.ctxmgr:
                 try:
-                    os.remove(self.filename)
+                    _os.remove(self.filename)
                 except OSError:
                     pass
             self.data = iter([])
