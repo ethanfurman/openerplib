@@ -69,7 +69,7 @@ def get_records(
         if isinstance(ids, (int,long)):
             single = True
             ids = [ids]
-        result = model.search_read(domain=[('id','in',ids)], offset=offset, limit=limit, order=order, fields=fields)
+        result = model.search_read(domain=[('id','in',ids),('active','in',[True, False])], offset=offset, limit=limit, order=order, fields=fields)
         if len(result) != len(ids):
             found = set([r.id for r in result])
             missing = sorted([i for i in ids if i not in found])
