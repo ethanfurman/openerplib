@@ -78,7 +78,8 @@ def get_records(
     else:
         result = model.search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order)
     if max_qty is not None and len(result) > max_qty:
-        raise ValueError('no more than %s records expected, but received %s' % (max_qty, len(result)))
+        raise ValueError('no more than %s records expected for %r, but received %s'
+                % (max_qty, ids or domain, len(result)))
     result = [_normalize(r) for r in result]
     if single:
         result = result[0]
