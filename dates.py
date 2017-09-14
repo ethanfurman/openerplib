@@ -29,12 +29,20 @@
 ##############################################################################
 
 from dbf import Date, DateTime, Time
+from pytz import timezone, utc as UTC
+
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
 DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
+try:
+    with open('/etc/timezone') as tz:
+        TIMEZONE = timezone(tz.read().strip())
+except Exception:
+    # default to UTC if we can't read the timezone file
+    TIMEZONE = UTC
 
 def str_to_datetime(str):
     """
@@ -95,3 +103,12 @@ def time_to_str(obj):
         return False
     return obj.strftime(DEFAULT_SERVER_TIME_FORMAT)
 
+def utc_datetime():
+    utc_dt = local_datetime().astimezone(UTC)
+    return utc_dt
+
+def local_datetime():
+    # same as utc if timezone not set
+    dt = DateTime.now().datetime()
+    dt = TIMEZONE.normalize(TIMEZONE.localize(dt))
+    return dt
