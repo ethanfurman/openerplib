@@ -28,6 +28,7 @@
 #
 ##############################################################################
 
+from time import timezone as system_timezone
 from datetime import date, datetime, time
 from pytz import timezone, utc as UTC
 
@@ -43,12 +44,15 @@ DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
 DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
-try:
-    with open('/etc/timezone') as tz:
-        LOCAL_TIME = timezone(tz.read().strip())
-except Exception:
-    # default to UTC if we can't read the timezone file
-    LOCAL_TIME = UTC
+
+# default to UTC
+LOCAL_TIME = UTC
+if system_timezone:
+    try:
+        with open('/etc/timezone') as tz:
+            LOCAL_TIME = timezone(tz.read().strip())
+    except Exception:
+        pass
 
 def str_to_datetime(string):
     """
