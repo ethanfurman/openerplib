@@ -59,17 +59,21 @@ def get_records(
         # connection is a connection
         # model is a string, get the real thing
         model = connection.get_model(model)
+    model_fields = model.fields_get_keys()
     # if skip_fields, build actual fields list
     if skip_fields:
         if fields:
             raise ValueError('Cannot specify both fields and skip_fields')
-        fields = [f for f in model.fields_get_keys() if f not in skip_fields]
+        fields = [f for f in model_fields if f not in skip_fields]
     single = False
     if ids:
         if isinstance(ids, (int,long)):
             single = True
             ids = [ids]
-        result = model.search_read(domain=[('id','in',ids),'|',('active','=',True),('active','=',False)], offset=offset, limit=limit, order=order, fields=fields)
+        domain=[('id','in',ids)]
+        if 'active' in model_fields:
+            domain.extend(['|',('active','=',True),('active','=',False)])
+        result = model.search_read(domain=domain, offset=offset, limit=limit, order=order, fields=fields)
         if len(result) != len(ids):
             found = set([r.id for r in result])
             missing = sorted([i for i in ids if i not in found])
