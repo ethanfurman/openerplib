@@ -28,6 +28,7 @@
 
 import os as _os
 import sys as _sys
+import aenum as _aenum
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
@@ -95,9 +96,20 @@ def _normalize(d):
     for key, value in sorted(d.items()):
         if isinstance(value, dict):
             res[key] = _normalize(value)
+        elif (
+                isinstance(value, list)
+            and len(value) == 2
+            and isinstance(value[0], (int, long))
+            and isinstance(value[1], basestring)
+            ):
+            res[key] = Many2One(*value)
         else:
             res[key] = value
     return res
+
+class Many2One(_aenum.NamedTuple):
+    id = 0, "OpenERP id of record"
+    name = 1, "_rec_name field of record"
 
 class AttrDict(object):
     """
