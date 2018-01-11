@@ -43,6 +43,7 @@ def get_records(
         connection, model=None, domain=[(1,'=',1)], fields=[],
         offset=0, limit=None, order=None,
         max_qty=None, ids=None, skip_fields=[],
+        context=None,
         ):
     """get records from model
 
@@ -53,6 +54,7 @@ def get_records(
 
     returns a list of all records found
     """
+    context = context or {}
     if model is None:
         # connection is a model object, switch 'em
         model, connection = connection, model
@@ -72,16 +74,16 @@ def get_records(
             single = True
             ids = [ids]
         domain=[('id','in',ids)]
-        if 'active' in model_fields:
-            domain.extend(['|',('active','=',True),('active','=',False)])
-        result = model.search_read(domain=domain, offset=offset, limit=limit, order=order, fields=fields)
+        if 'active' in model_fields and 'active_test' not in context:
+            context['active_test'] = False
+        result = model.search_read(domain=domain, offset=offset, limit=limit, order=order, fields=fields, context=context)
         if len(result) != len(ids):
             found = set([r.id for r in result])
             missing = sorted([i for i in ids if i not in found])
             if missing:
                 raise MissingRecord('missing record(s): %s' % ', '.join([str(m) for m in missing]))
     else:
-        result = model.search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order)
+        result = model.search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order, context=context)
     if max_qty is not None and len(result) > max_qty:
         raise ValueError('no more than %s records expected for %r, but received %s'
                 % (max_qty, ids or domain, len(result)))
