@@ -313,10 +313,10 @@ class Model(object):
             self.connection.check_login(False)
             self.__logger.debug(args)
             if method == 'create':
-                # get the default values, and update them from the passed in values
+                # get the values, fields, and default values
+                new_values = kwds.pop('values', None) or args[0]
                 fields = self.fields_get()
                 default_values = self.default_get(fields.keys())
-                new_values = kwds.pop('values', None) or args[0]
                 # take special care with x2many fields 'cause they come to us as a list of
                 # ids which we must transform into a list of delete and add commands such as
                 # [(3, id1), (4, id1), (3, id2), (4, id2), ...]
@@ -333,9 +333,10 @@ class Model(object):
                         new_many.append((3, id))
                         new_many.append((4, id))
                     default_values[many] = new_many
+                # finally, update the defaults from the passed in values
                 default_values.update(new_values)
                 args = (default_values, ) + args[1:]
-            if method == 'search':
+            elif method == 'search':
                 # 'domain' keyword is actualy 'args' (stupid), so switch 'domain' to 'args'
                 # if present
                 if 'domain' in kwds and 'args' in kwds:
