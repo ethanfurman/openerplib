@@ -113,6 +113,18 @@ class Many2One(_aenum.NamedTuple):
     id = 0, "OpenERP id of record"
     name = 1, "_rec_name field of record"
 
+    def __eq__(self, other):
+        if isinstance(other, (int, long)):
+            return self[0] == other
+        else:
+            return super(Many2One, self).__eq__(other)
+
+    def __ne__(self, other):
+        if isinstance(other, (int, long)):
+            return self[0] != other
+        else:
+            return super(Many2One, self).__ne__(other)
+
 class AttrDict(object):
     """
     allows dictionary lookup using . notation
