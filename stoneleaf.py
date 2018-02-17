@@ -135,16 +135,16 @@ class AttrDict(object):
     _internal = ['_illegal', '_values', '_default']
     _default = None
 
-    def __init__(yo, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         "kwargs is evaluated last"
         if 'default' in kwargs:
-            yo._default = kwargs.pop('default')
-        yo._values = _values = {}
-        yo._illegal = _illegal = tuple([attr for attr in dir(_values) if attr[0] != '_'])
-        if yo._default is None:
+            self._default = kwargs.pop('default')
+        self._values = _values = {}
+        self._illegal = _illegal = tuple([attr for attr in dir(_values) if attr[0] != '_'])
+        if self._default is None:
             default_factory = lambda : False
         else:
-            default_factory = yo._default
+            default_factory = self._default
         for arg in args:
             # first, see if it's a lone string
             if isinstance(arg, basestring):
@@ -168,93 +168,93 @@ class AttrDict(object):
         if kwargs:
             _values.update(kwargs)
 
-    def __contains__(yo, key):
-        return key in yo._values
+    def __contains__(self, key):
+        return key in self._values
 
-    def __delitem__(yo, name):
+    def __delitem__(self, name):
         if name[0] == '_':
             raise KeyError("illegal key name: %r" % name)
-        if name not in yo._values:
+        if name not in self._values:
             raise KeyError("%s: no such key" % name)
-        yo._values.pop(name)
+        self._values.pop(name)
 
-    def __delattr__(yo, name):
+    def __delattr__(self, name):
         if name[0] == '_':
             raise AttributeError("illegal key name: %r" % name)
-        if name not in yo._values:
+        if name not in self._values:
             raise AttributeError("%s: no such key" % name)
-        yo._values.pop(name)
+        self._values.pop(name)
 
-    def __eq__(yo, other):
+    def __eq__(self, other):
         if isinstance(other, AttrDict):
             other = other._values
         elif not isinstance(other, dict):
             return NotImplemented
-        return other == yo._values
+        return other == self._values
 
-    def __ne__(yo, other):
-        result = yo == other
+    def __ne__(self, other):
+        result = self == other
         if result is NotImplemented:
             return result
         else:
             return not result
 
-    def __getitem__(yo, name):
-        if name in yo._values:
-            return yo._values[name]
-        elif yo._default:
-            result = yo._values[name] = yo._default()
+    def __getitem__(self, name):
+        if name in self._values:
+            return self._values[name]
+        elif self._default:
+            result = self._values[name] = self._default()
             return result
         else:
             raise KeyError("object has no key %r" % name)
 
-    def __getattr__(yo, name):
-        if name in yo._values:
-            return yo._values[name]
-        attr = getattr(yo._values, name, None)
+    def __getattr__(self, name):
+        if name in self._values:
+            return self._values[name]
+        attr = getattr(self._values, name, None)
         if attr is not None:
             return attr
-        elif yo._default:
-            result = yo._values[name] = yo._default()
+        elif self._default:
+            result = self._values[name] = self._default()
             return result
         else:
             raise AttributeError("object has no attribute %r" % name)
 
-    def __iter__(yo):
-        return iter(sorted(yo.keys()))
+    def __iter__(self):
+        return iter(sorted(self.keys()))
 
-    def __len__(yo):
-        return len(yo._values)
+    def __len__(self):
+        return len(self._values)
 
-    def __setitem__(yo, name, value):
-        if name in yo._internal:
-            object.__setattr__(yo, name, value)
+    def __setitem__(self, name, value):
+        if name in self._internal:
+            object.__setattr__(self, name, value)
         elif isinstance(name, basestring) and name[0:1] == '_':
             raise KeyError("illegal attribute name: %r" % name)
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
         else:
-            yo._values[name] = value
+            self._values[name] = value
 
-    def __setattr__(yo, name, value):
-        if name in yo._internal:
-            object.__setattr__(yo, name, value)
-        elif name[0] == '_' or name in yo._illegal:
+    def __setattr__(self, name, value):
+        if name in self._internal:
+            object.__setattr__(self, name, value)
+        elif name[0] == '_' or name in self._illegal:
             raise AttributeError("illegal attribute name: %r" % name)
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
         else:
-            yo._values[name] = value
+            self._values[name] = value
 
-    def __repr__(yo):
-        if not yo:
+    def __repr__(self):
+        if not self:
             return "AttrDict()"
-        return "AttrDict([%s])" % ', '.join(["(%r, %r)" % (k, yo._values[k]) for k in yo.keys()])
+        return "AttrDict([%s])" % ', '.join(["(%r, %r)" % (k, self._values[k]) for k in self.keys()])
 
-    def __str__(yo):
+    def __str__(self):
         lines = ['{']
-        for k, v in yo.items():
-            if isinstance(v, yo.__class__):
+        for k, v in self.items():
+            if isinstance(v, self.__class__):
                 lines.append(' %s = {' % k)
                 for line in str(v).split('\n')[1:-1]:
                     lines.append('     %s' % line)
@@ -264,14 +264,14 @@ class AttrDict(object):
         lines.append(' }')
         return '\n'.join(lines)
 
-    def keys(yo):
-        return sorted(yo._values.keys())
+    def keys(self):
+        return sorted(self._values.keys())
 
-    def items(yo):
-        return sorted(yo._values.items())
+    def items(self):
+        return sorted(self._values.items())
 
-    def values(yo):
-        return [v for k, v in sorted(yo._values.items())]
+    def values(self):
+        return [v for k, v in sorted(self._values.items())]
 
 
 class EmbeddedNewlineError(ValueError):
