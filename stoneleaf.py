@@ -129,18 +129,17 @@ class AttrDict(object):
     """
     allows dictionary lookup using . notation
     allows a default similar to defaultdict
+    iterations always ordered by key
     """
 
-    _internal = ['_illegal', '_values', '_default', '_order']
+    _internal = ['_illegal', '_values', '_default']
     _default = None
 
     def __init__(yo, *args, **kwargs):
         "kwargs is evaluated last"
         if 'default' in kwargs:
             yo._default = kwargs.pop('default')
-        needs_sorted = False
         yo._values = _values = {}
-        yo._order = _order = []
         yo._illegal = _illegal = tuple([attr for attr in dir(_values) if attr[0] != '_'])
         if yo._default is None:
             default_factory = lambda : False
@@ -153,7 +152,6 @@ class AttrDict(object):
             # next, see if it's a mapping
             try:
                 arg = arg.items()
-                needs_sorted = True
             except (AttributeError, ):
                 pass
             # now iterate over it
@@ -165,35 +163,27 @@ class AttrDict(object):
                 if not isinstance(key, basestring):
                     raise ValueError('keys must be strings, but %r is %r' % (key, type(key)))
                 if key in _illegal:
-                    raise ValueError('%s is a reserved word' % key)
+                    raise ValueError('%r is a reserved word' % key)
                 _values[key] = value
-                if key not in _order:
-                    _order.append(key)
         if kwargs:
-            needs_sorted = True
             _values.update(kwargs)
-            _order.extend([k for k in kwargs.keys() if k not in _order])
-        if needs_sorted:
-            _order.sort()
 
     def __contains__(yo, key):
         return key in yo._values
 
     def __delitem__(yo, name):
         if name[0] == '_':
-            raise KeyError("illegal key name: %s" % name)
+            raise KeyError("illegal key name: %r" % name)
         if name not in yo._values:
             raise KeyError("%s: no such key" % name)
         yo._values.pop(name)
-        yo._order.pop(yo._order.index(name))
 
     def __delattr__(yo, name):
         if name[0] == '_':
-            raise AttributeError("illegal key name: %s" % name)
+            raise AttributeError("illegal key name: %r" % name)
         if name not in yo._values:
             raise AttributeError("%s: no such key" % name)
         yo._values.pop(name)
-        yo._order.pop(yo._order.index(name))
 
     def __eq__(yo, other):
         if isinstance(other, AttrDict):
@@ -213,10 +203,10 @@ class AttrDict(object):
         if name in yo._values:
             return yo._values[name]
         elif yo._default:
-            yo._order.append(name)
             result = yo._values[name] = yo._default()
             return result
-        raise KeyError("object has no key %s" % name)
+        else:
+            raise KeyError("object has no key %r" % name)
 
     def __getattr__(yo, name):
         if name in yo._values:
@@ -225,18 +215,13 @@ class AttrDict(object):
         if attr is not None:
             return attr
         elif yo._default:
-            yo._order.append(name)
             result = yo._values[name] = yo._default()
             return result
-        raise AttributeError("object has no attribute %s" % name)
+        else:
+            raise AttributeError("object has no attribute %r" % name)
 
     def __iter__(yo):
-        if len(yo._values) != len(yo._order):
-            _order = set(yo._order)
-            for key in yo._values:
-                if key not in _order:
-                    yo._order.append(key)
-        return iter(yo._order)
+        return iter(sorted(yo.keys()))
 
     def __len__(yo):
         return len(yo._values)
@@ -245,56 +230,48 @@ class AttrDict(object):
         if name in yo._internal:
             object.__setattr__(yo, name, value)
         elif isinstance(name, basestring) and name[0:1] == '_':
-            raise KeyError("illegal attribute name: %s" % name)
+            raise KeyError("illegal attribute name: %r" % name)
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
         else:
-            if name not in yo._values:
-                yo._order.append(name)
             yo._values[name] = value
 
     def __setattr__(yo, name, value):
         if name in yo._internal:
             object.__setattr__(yo, name, value)
         elif name[0] == '_' or name in yo._illegal:
-            raise AttributeError("illegal attribute name: %s" % name)
+            raise AttributeError("illegal attribute name: %r" % name)
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
         else:
-            if name not in yo._values:
-                yo._order.append(name)
             yo._values[name] = value
 
     def __repr__(yo):
         if not yo:
             return "AttrDict()"
-        return "AttrDict([%s])" % ', '.join(["(%r, %r)" % (x, yo._values[x]) for x in yo])
+        return "AttrDict([%s])" % ', '.join(["(%r, %r)" % (k, yo._values[k]) for k in yo.keys()])
 
     def __str__(yo):
         lines = ['{']
-        for k, v in sorted(yo._values.items()):
+        for k, v in yo.items():
             if isinstance(v, yo.__class__):
                 lines.append(' %s = {' % k)
                 for line in str(v).split('\n')[1:-1]:
                     lines.append('     %s' % line)
                 lines.append('      }')
             else:
-                lines.append(' %s = %r' % (k, v))
+                lines.append(' %r:  %r' % (k, v))
         lines.append(' }')
         return '\n'.join(lines)
 
     def keys(yo):
-        return yo._order[:]
+        return sorted(yo._values.keys())
 
-    __pop_sentinel = object()
-    def pop(yo, name, default=__pop_sentinel):
-        if name in yo._values:
-            yo._order.pop(yo._order.index(name))
-            return yo._values.pop(name)
-        elif default is not yo.__pop_sentinel:
-            return default
-        else:
-            raise KeyError('key not found: %r' % name)
+    def items(yo):
+        return sorted(yo._values.items())
+
+    def values(yo):
+        return [v for k, v in sorted(yo._values.items())]
 
 
 class EmbeddedNewlineError(ValueError):
