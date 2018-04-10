@@ -116,14 +116,18 @@ class Many2One(_aenum.NamedTuple):
     def __eq__(self, other):
         if isinstance(other, (int, long)):
             return self[0] == other
+        elif isinstance(other, self.__class__):
+            return self[0] == other[0]
         else:
-            return super(Many2One, self).__eq__(other)
+            return NotImplemented
 
     def __ne__(self, other):
         if isinstance(other, (int, long)):
             return self[0] != other
+        elif isinstance(other, self.__class__):
+            return self[0] != other[0]
         else:
-            return super(Many2One, self).__ne__(other)
+            return NotImplemented
 
 class AttrDict(object):
     """
