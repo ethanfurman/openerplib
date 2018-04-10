@@ -172,6 +172,13 @@ class AttrDict(object):
         if kwargs:
             _values.update(kwargs)
 
+    def copy(self):
+        result = self.__class__()
+        if self._default is not None:
+            result._default = self._default
+        result._values = self._values.copy()
+        return result
+
     def __contains__(self, key):
         return key in self._values
 
