@@ -28,13 +28,14 @@
 #
 ##############################################################################
 
+from dbf import Date, DateTime, Time
 from time import timezone as system_timezone
 from datetime import date, datetime, time
 from pytz import timezone, utc as UTC
 
 """
-str_* functions return objects in LOCAL_TIME
-*_str functions return strings in UTC
+str_* functions assume inputs are in UTC, and return objects in LOCAL_TIME
+*_str functions assume inputs are in localtime, and return strings in UTC
 
 whether those are different depends on whether the timezone is set on the server
 """
@@ -140,4 +141,18 @@ def local_datetime():
     # same as utc if timezone not set
     dt = datetime.now()
     dt = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt))
+    return dt
+
+def local_to_utc(dt):
+    # takes a naive time/datetime, stamps it with LOCALTIME,
+    # and converts to UTC
+    if not dt:
+        return False
+    is_time = isinstance(dt, (time, Time))
+    if is_time:
+        dt = DateTime.combine(Date.today(), dt)
+    dt = dt._datetime
+    dt = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt)).astimezone(UTC)
+    if is_time:
+        return dt.time
     return dt
