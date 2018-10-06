@@ -158,5 +158,5 @@ def local_to_utc(dt):
     dt = dt._datetime
     dt = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt)).astimezone(UTC)
     if is_time:
-        return dt.time
+        return dt.time()
     return dt
