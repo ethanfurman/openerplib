@@ -46,19 +46,23 @@ DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
 
-# default to UTC
-LOCAL_TIME = UTC
+try:
+    # get timezone where server is physically located
+    with open('/etc/timezone') as tz:
+        LOCAL_TIME = timezone(tz.read().strip())
+except Exception:
+    # otherwise assume UTC
+    LOCAL_TIME = UTC
 if system_timezone:
-    try:
-        with open('/etc/timezone') as tz:
-            LOCAL_TIME = timezone(tz.read().strip())
-    except Exception:
-        pass
+    # where will time functions think we are?
+    EFF_TIME = LOCAL_TIME
+else:
+    EFF_TIME = UTC
 
 def str_to_datetime(string):
     """
-    Converts a string to a datetime object using OpenERP's
-    datetime string format (exemple: '2011-12-01 15:12:35').
+    Converts a UTC string to a datetime object using OpenERP's
+    datetime string format (example: '2011-12-01 15:12:35').
 
     The UTC timezone is added, and then the datetime is converted
     to the local timezone.
@@ -72,7 +76,7 @@ def str_to_datetime(string):
 def str_to_date(string):
     """
     Converts a string to a date object using OpenERP's
-    date string format (exemple: '2011-12-01').
+    date string format (example: '2011-12-01').
     """
     if not string:
         return False
@@ -80,8 +84,8 @@ def str_to_date(string):
 
 def str_to_time(string):
     """
-    Converts a string to a time object using OpenERP's
-    time string format (exemple: '15:12:35').
+    Converts a UTC string to a time object using OpenERP's
+    time string format (example: '15:12:35').
 
     The UTC timezone is added, and then the time is converted
     to the local timezone.
@@ -139,8 +143,8 @@ def utc_datetime():
 
 def local_datetime():
     # same as utc if timezone not set
-    dt = datetime.now()
-    dt = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt))
+    dt = EFF_TIME.normalize(EFF_TIME.localize(datetime.now()))
+    dt = dt.astimezone(LOCAL_TIME)
     return dt
 
 def local_to_utc(dt):
