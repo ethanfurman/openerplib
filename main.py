@@ -258,15 +258,16 @@ class Connection(object):
             self.user_context = self.get_model('res.users').context_get()
         return self.user_context
 
-    def get_model(self, model_name):
+    def get_model(self, model_name, transient=False):
         """
         Returns a Model instance to allow easy remote manipulation of an OpenERP model.
 
         :param model_name: The name of the model.
         """
         model = Model(self, model_name)
-        # make sure model is valid
-        model.search([('id','=',0)])
+        if not transient:
+            # make sure model is valid
+            model.search([('id','=',0)])
         return model
 
     def get_service(self, service_name):
