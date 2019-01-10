@@ -29,6 +29,7 @@
 import os as _os
 import sys as _sys
 import aenum as _aenum
+from collections import defaultdict
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
@@ -36,11 +37,13 @@ DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
 
+ALL_RECORDS = [(1,'=',1)]
+
 class MissingRecord(Exception):
     "records not found during id search"
 
 def get_records(
-        connection, model=None, domain=[(1,'=',1)], fields=[],
+        connection, model=None, domain=ALL_RECORDS, fields=[],
         offset=0, limit=None, order=None,
         max_qty=None, ids=None, skip_fields=[],
         context=None,
@@ -57,40 +60,154 @@ def get_records(
     context = context or {}
     if model is None:
         # connection is a model object, switch 'em
-        model, connection = connection, model
+        model = connection
+        connection = model.connection
     else:
         # connection is a connection
         # model is a string, get the real thing
         model = connection.get_model(model)
-    model_fields = model.fields_get_keys()
     # if skip_fields, build actual fields list
     if skip_fields:
         if fields:
             raise ValueError('Cannot specify both fields and skip_fields')
-        fields = [f for f in model_fields if f not in skip_fields]
+        fields = [f for f in model.fields_get_keys() if f not in skip_fields]
+    elif not fields:
+        fields = model.fields_get_keys()
     single = False
     if ids:
         if isinstance(ids, (int,long)):
             single = True
             ids = [ids]
-        domain=[('id','in',ids)]
-        if 'active' in model_fields and 'active_test' not in context:
-            context['active_test'] = False
-        result = model.search_read(domain=domain, offset=offset, limit=limit, order=order, fields=fields, context=context)
-        if len(result) != len(ids):
-            found = set([r.id for r in result])
-            missing = sorted([i for i in ids if i not in found])
-            if missing:
-                raise MissingRecord('missing record(s): %s' % ', '.join([str(m) for m in missing]))
-    else:
-        result = model.search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order, context=context)
+    result = Query(model, ids, domain, fields).run(context=context).records
+    if ids and len(result) != len(ids):
+        found = set([r.id for r in result])
+        missing = sorted([i for i in ids if i not in found])
+        if missing:
+            raise MissingRecord('missing record(s): %s' % ', '.join([str(m) for m in missing]))
     if max_qty is not None and len(result) > max_qty:
         raise ValueError('no more than %s records expected for %r, but received %s'
                 % (max_qty, ids or domain, len(result)))
-    result = [_normalize(r) for r in result]
     if single:
         result = result[0]
     return result
+
+class Query(object):
+
+    def __init__(self, model, ids, domain, fields, context=None):
+        # fields may be modified (reminder: changes will be seen by caller)
+        if context is None:
+            context = {}
+        if ids:
+            if domain and domain != ALL_RECORDS:
+                raise ValueError('Cannot specify both ids and domain (%r and %r)' % (ids, domain))
+            if isinstance(ids, (int,long)):
+                ids = [ids]
+        elif domain:
+            ids = model.search(domain, context=context)
+        else:
+            raise ValueError('Either IDS or DOMAIN must be specified')
+        # at this point ids is set to the records we want
+        main_query = QueryDomain(model, fields, ids)
+        self.query = main_query
+        self.sub_queries = sub_queries = {}
+        many_fields = [f for f in fields if '/' in f]
+        if not many_fields:
+            field_defs = self.field_defs = model.fields_get(main_query.fields, context=context)
+        else:
+            main_query.fields[:] = [f for f in main_query.fields if f not in many_fields]
+            nested = defaultdict(list)
+            for f in many_fields:
+                main_field, sub_field = f.split('/', 1)
+                nested[main_field].append(sub_field)
+            main_query.fields.extend(nested.keys())
+            field_defs = self.field_defs = model.fields_get(main_query.fields, context=context)
+            for main_field, sub_fields in nested.items():
+                field_def = field_defs[main_field]
+                if field_def['type'] not in ('one2many', 'many2many', 'many2one'):
+                    raise TypeError('field %r does not link to another table')
+                sub_model = model.connection.get_model(field_def['relation'])
+                self.sub_queries[main_field] = QueryDomain(sub_model, sub_fields)
+        main_query.run()
+        # gather ids from main query
+        for field, sub_query in sub_queries.items():
+            # if many2one then data is an int or False
+            # otherwise a (possibly empty) list
+            f_type = field_defs[field]['type']
+            if f_type == 'many2one':
+                for rec in main_query.records:
+                    data = rec[field]
+                    if data:
+                        sub_query.ids.append(data.id)
+            elif f_type in ('one2many', 'many2many'):
+                for rec in main_query.records:
+                    data = rec[field]
+                    sub_query.ids.extend(data)
+            else:
+                raise TypeError('unknown link type for %r: %r' % (field, f_type))
+            sub_query.ids = list(set(sub_query.ids))
+        # execute subquery and convert linked fields from ids to records
+        for field, sub_query in sub_queries.items():
+            sub_query.run()
+            # if many2one then data is an int or False
+            # otherwise a (possibly empty) list
+            f_type = field_defs[field]['type']
+            if f_type == 'many2one':
+                for rec in main_query.records:
+                    rec[field] = sub_query.id_map.get(rec[field].id, False)
+            elif f_type in ('one2many', 'many2many'):
+                for rec in main_query.records:
+                    rec[field] = [
+                            sub_query.id_map[id]
+                            for id in rec[field]
+                            ]
+        self.records = main_query.records
+        self.id_map = main_query.id_map
+
+
+class QueryDomain(object):
+
+    _cache = dict()       # key: model.model_name, tuple(fields), tuple(ids)
+    _cache_key = None
+
+    def __init__(self, model, fields, ids=None, context=None):
+        # fields is the /same/ fields object from Query
+        self.model = model          # OpenERP model to query
+        self.fields = fields        # specific fields to gather
+        if ids is None:
+            ids = []
+        self.ids = ids              # record ids to retrieve
+        self.context = context or {}
+        self.query = None
+
+    def __repr__(self):
+        return 'QueryDomain(table=%r, ids=%r, fields=%r)' % (self.model.model_name, self.ids, self.fields)
+
+    @property
+    def cache_key(self):
+        if self._cache_key is None:
+            raise TypeError('run() has not been called yet')
+        return self._cache_key
+
+    @property
+    def id_map(self):
+        return self._cache[self.cache_key][1]
+
+    @property
+    def records(self):
+        return self._cache[self.cache_key][0]
+
+    def run(self):
+        if any(['/' in f for f in self.fields]):
+            self.query = Query(self.model, self.ids, None, self.fields, self.context)
+        cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
+        if self._cache.get(cache_key) is None:
+            records = self.model.read(self.ids, fields=self.fields)
+            id_map = dict([
+                (r.id, r)
+                for r in records
+                ])
+            self._cache[cache_key] = records, id_map
+
 
 def _normalize(d):
     'recursively convert each dict into a AttrDict'
@@ -98,6 +215,8 @@ def _normalize(d):
     for key, value in sorted(d.items()):
         if isinstance(value, dict):
             res[key] = _normalize(value)
+        elif isinstance(value, list) and value and isinstance(value[0], dict):
+            res[key] = [_normalize(v) for v in value]
         elif (
                 isinstance(value, list)
             and len(value) == 2
