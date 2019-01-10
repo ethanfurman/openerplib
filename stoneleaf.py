@@ -78,7 +78,7 @@ def get_records(
         if isinstance(ids, (int,long)):
             single = True
             ids = [ids]
-    result = Query(model, ids, domain, fields).run(context=context).records
+    result = Query(model, ids, domain, fields, context=context).records
     if ids and len(result) != len(ids):
         found = set([r.id for r in result])
         missing = sorted([i for i in ids if i not in found])
