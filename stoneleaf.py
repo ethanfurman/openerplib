@@ -29,7 +29,7 @@
 import os as _os
 import sys as _sys
 import aenum as _aenum
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
@@ -93,10 +93,12 @@ def get_records(
 
 class Query(object):
 
-    def __init__(self, model, ids, domain, fields, context=None):
+    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, context=None, _parent=None):
         # fields may be modified (reminder: changes will be seen by caller)
         if context is None:
             context = {}
+        if fields is None:
+            raise ValueError('FIELDS must be given')
         if ids:
             if domain and domain != ALL_RECORDS:
                 raise ValueError('Cannot specify both ids and domain (%r and %r)' % (ids, domain))
@@ -104,29 +106,71 @@ class Query(object):
                 ids = [ids]
         elif domain:
             ids = model.search(domain, context=context)
+        # IDs might be zero if there are no matching parent fields
+        #
+        # save current fields as ordering information since fields itself may be modified
+        self.order = fields[:]
+        # create a field name to display name mapping
+        if _parent is None:
+            parent_field, parent_display = '', ''
         else:
-            raise ValueError('Either IDS or DOMAIN must be specified')
-        # at this point ids is set to the records we want
+            # _parent = (field_name, 'Display Name')
+            parent_field = '%s/' % _parent[0]
+            parent_display = '%s / ' % _parent[1]
+        self.names = {}.fromkeys([parent_field+n for n in fields])
+        #
         main_query = QueryDomain(model, fields, ids)
         self.query = main_query
         self.sub_queries = sub_queries = {}
         many_fields = [f for f in fields if '/' in f]
         if not many_fields:
             field_defs = self.field_defs = model.fields_get(main_query.fields, context=context)
+            # save names
+            for n, f in field_defs.items():
+                self.names[parent_field+n] = parent_display + f['string']
         else:
-            main_query.fields[:] = [f for f in main_query.fields if f not in many_fields]
+            unique_fields = []
+            for f in fields:
+                f = f.split('/')[0]
+                if f not in unique_fields:
+                    unique_fields.append(f)
+            main_query.fields[:] = unique_fields
             nested = defaultdict(list)
             for f in many_fields:
                 main_field, sub_field = f.split('/', 1)
                 nested[main_field].append(sub_field)
-            main_query.fields.extend(nested.keys())
             field_defs = self.field_defs = model.fields_get(main_query.fields, context=context)
+            # save names
+            for n, f in field_defs.items():
+                self.names[parent_field+n] = parent_display + f['string']
+            # create sub-queries
             for main_field, sub_fields in nested.items():
                 field_def = field_defs[main_field]
                 if field_def['type'] not in ('one2many', 'many2many', 'many2one'):
                     raise TypeError('field %r does not link to another table')
+                # save name
+                self.names[parent_field+main_field] = main_display = parent_display+field_def['string']
                 sub_model = model.connection.get_model(field_def['relation'])
-                self.sub_queries[main_field] = QueryDomain(sub_model, sub_fields)
+                self.sub_queries[main_field] = sub_query = QueryDomain(
+                        sub_model,
+                        sub_fields,
+                        _parent=(main_field, main_display),
+                        )
+                # if sub_query has it's own query, gather updated field names
+                # from it
+                if sub_query.query is not None:
+                    # XXX: does this ever happen?
+                    #    : no - sub_query.query doesn't exist until sub_query
+                    #    :      is run
+                    pass
+                else:
+                    # otherwise, we can figure it out ourselves
+                    sub_field_defs = sub_model.fields_get(sub_fields, context=context)
+                    # save names
+                    for n, f in sub_field_defs.items():
+                        self.names[parent_field+main_field+'/'+n] = (
+                                parent_display + main_display + ' / ' + f['string']
+                                )
         main_query.run()
         # gather ids from main query
         for field, sub_query in sub_queries.items():
@@ -148,12 +192,15 @@ class Query(object):
         # execute subquery and convert linked fields from ids to records
         for field, sub_query in sub_queries.items():
             sub_query.run()
+            if sub_query.query is not None:
+                self.names.update(sub_query.query.names)
             # if many2one then data is an int or False
             # otherwise a (possibly empty) list
             f_type = field_defs[field]['type']
             if f_type == 'many2one':
                 for rec in main_query.records:
-                    rec[field] = sub_query.id_map.get(rec[field].id, False)
+                    if rec[field]:
+                        rec[field] = sub_query.id_map[rec[field].id]
             elif f_type in ('one2many', 'many2many'):
                 for rec in main_query.records:
                     rec[field] = [
@@ -169,7 +216,7 @@ class QueryDomain(object):
     _cache = dict()       # key: model.model_name, tuple(fields), tuple(ids)
     _cache_key = None
 
-    def __init__(self, model, fields, ids=None, context=None):
+    def __init__(self, model, fields, ids=None, context=None, _parent=None):
         # fields is the /same/ fields object from Query
         self.model = model          # OpenERP model to query
         self.fields = fields        # specific fields to gather
@@ -177,7 +224,10 @@ class QueryDomain(object):
             ids = []
         self.ids = ids              # record ids to retrieve
         self.context = context or {}
+        self._parent_field = _parent
         self.query = None
+        if any(['/' in f for f in self.fields]):
+            self.query = True
 
     def __repr__(self):
         return 'QueryDomain(table=%r, ids=%r, fields=%r)' % (self.model.model_name, self.ids, self.fields)
@@ -198,7 +248,14 @@ class QueryDomain(object):
 
     def run(self):
         if any(['/' in f for f in self.fields]):
-            self.query = Query(self.model, self.ids, None, self.fields, self.context)
+            self.query = Query(
+                    self.model,
+                    self.ids,
+                    None, # domain
+                    self.fields,
+                    self.context,
+                    _parent=self._parent_field,
+                    )
         cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
         if self._cache.get(cache_key) is None:
             records = self.model.read(self.ids, fields=self.fields)
@@ -206,16 +263,25 @@ class QueryDomain(object):
                 (r.id, r)
                 for r in records
                 ])
+            # update cache_key as _normalize may have modified list of fields returned
+            cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
             self._cache[cache_key] = records, id_map
 
-
-def _normalize(d):
+def _normalize(d, fields=None):
     'recursively convert each dict into a AttrDict'
+    # fields may be modified
     res = AttrDict()
-    for key, value in sorted(d.items()):
+    if fields is None:
+        fields = d.keys()
+    if 'id' in d and 'id' not in fields:
+        fields.insert(0, 'id')
+    other = set(d.keys()) - set(fields)
+    fields.extend(list(other))
+    for key in fields:
+        value = d[key]
         if isinstance(value, dict):
             res[key] = _normalize(value)
-        elif isinstance(value, list) and value and isinstance(value[0], dict):
+        elif isinstance(value, list) and value and isinstance(value[0], dict) and not isinstance(value[0], AttrDict):
             res[key] = [_normalize(v) for v in value]
         elif (
                 isinstance(value, list)
@@ -255,13 +321,15 @@ class AttrDict(object):
     iterations always ordered by key
     """
 
-    _internal = ['_illegal', '_values', '_default']
+    _internal = ['_illegal', '_keys', '_values', '_default', '_ordered']
     _default = None
 
     def __init__(self, *args, **kwargs):
         "kwargs is evaluated last"
         if 'default' in kwargs:
             self._default = kwargs.pop('default')
+        self._ordered = True
+        self._keys = []
         self._values = _values = {}
         self._illegal = _illegal = tuple([attr for attr in dir(_values) if attr[0] != '_'])
         if self._default is None:
@@ -274,7 +342,14 @@ class AttrDict(object):
                 arg = [(arg, default_factory())]
             # next, see if it's a mapping
             try:
-                arg = arg.items()
+                new_arg = arg.items()
+                if isinstance(arg, OrderedDict):
+                    pass
+                elif isinstance(arg, AttrDict) and arg._ordered:
+                    pass
+                else:
+                    self._ordered = False
+                arg = new_arg
             except (AttributeError, ):
                 pass
             # now iterate over it
@@ -288,7 +363,11 @@ class AttrDict(object):
                 if key in _illegal:
                     raise ValueError('%r is a reserved word' % key)
                 _values[key] = value
+                if key not in self._keys:
+                    self._keys.append(key)
         if kwargs:
+            self._ordered = False
+            self._keys = list(set(self._keys + kwargs.keys()))
             _values.update(kwargs)
 
     def copy(self):
@@ -351,7 +430,10 @@ class AttrDict(object):
             raise AttributeError("object has no attribute %r" % name)
 
     def __iter__(self):
-        return iter(sorted(self.keys()))
+        if self._ordered:
+            return iter(self._keys)
+        else:
+            return iter(sorted(self._keys))
 
     def __len__(self):
         return len(self._values)
@@ -364,6 +446,8 @@ class AttrDict(object):
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
         else:
+            if name not in self._keys:
+                self._keys.append(name)
             self._values[name] = value
 
     def __setattr__(self, name, value):
@@ -374,6 +458,8 @@ class AttrDict(object):
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
         else:
+            if name not in self._keys:
+                self._keys.append(name)
             self._values[name] = value
 
     def __repr__(self):
@@ -395,13 +481,16 @@ class AttrDict(object):
         return '\n'.join(lines)
 
     def keys(self):
-        return sorted(self._values.keys())
+        if self._ordered:
+            return self._keys
+        else:
+            return sorted(self._keys)
 
     def items(self):
-        return sorted(self._values.items())
+        return [(k, self._values[k]) for k in self.keys()]
 
     def values(self):
-        return [v for k, v in sorted(self._values.items())]
+        return [self._values[k] for k in self.keys()]
 
 
 class EmbeddedNewlineError(ValueError):
