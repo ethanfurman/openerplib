@@ -39,7 +39,7 @@ import xmlrpclib
 import logging
 import urllib2
 import random
-from stoneleaf import get_records, _normalize
+from stoneleaf import _normalize
 
 try:
     import json
@@ -357,9 +357,15 @@ class Model(object):
             if method == "read":
                 if isinstance(result, list) and len(result) > 0 and "id" in result[0]:
                     ids = kwds.pop('ids', None) or args[0]
+                    if 'fields' in kwds:
+                        fields = kwds['fields']
+                    elif len(args) > 1:
+                        fields = args[1]
+                    else:
+                        fields = None
                     index = {}
                     for r in result:
-                        index[r['id']] = _normalize(r)
+                        index[r['id']] = _normalize(r, fields=fields)
                     result = [index[x] for x in ids if x in index]
             self.__logger.debug('result: %r', result)
             return result
@@ -428,7 +434,7 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
 class OpenERP(object):
 
     def __init__(self, host, database=None, login=None, password=None, protocol="xmlrpc", port='auto'):
-        self.connection = conn = get_connection(host, protocol, port, database, login, password)
+        self.connection = get_connection(host, protocol, port, database, login, password)
 
     def __getattr__(self, model):
         setattr(self, model, self.connection.get_model(model))
