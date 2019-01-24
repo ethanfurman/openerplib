@@ -501,7 +501,7 @@ class AttrDict(object):
 
     @classmethod
     def fromkeys(cls, keys, value):
-        return cls.__class__([(k, value) for k in keys])
+        return cls([(k, value) for k in keys])
 
     def items(self):
         return [(k, self._values[k]) for k in self.keys()]
