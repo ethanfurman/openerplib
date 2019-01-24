@@ -323,6 +323,10 @@ class AttrDict(object):
 
     _internal = ['_illegal', '_keys', '_values', '_default', '_ordered']
     _default = None
+    _ordered = True
+    _illegal = ()
+    _values = {}
+    _keys = []
 
     def __init__(self, *args, **kwargs):
         "kwargs is evaluated last"
@@ -369,13 +373,7 @@ class AttrDict(object):
             self._ordered = False
             self._keys = list(set(self._keys + kwargs.keys()))
             _values.update(kwargs)
-
-    def copy(self):
-        result = self.__class__()
-        if self._default is not None:
-            result._default = self._default
-        result._values = self._values.copy()
-        return result
+        assert set(self._keys) == set(self._values.keys())
 
     def __contains__(self, key):
         return key in self._values
@@ -386,6 +384,8 @@ class AttrDict(object):
         if name not in self._values:
             raise KeyError("%s: no such key" % name)
         self._values.pop(name)
+        self._keys.remove(self._keys.index(name))
+        assert set(self._keys) == set(self._values.keys())
 
     def __delattr__(self, name):
         if name[0] == '_':
@@ -393,6 +393,8 @@ class AttrDict(object):
         if name not in self._values:
             raise AttributeError("%s: no such key" % name)
         self._values.pop(name)
+        self._keys.remove(name)
+        assert set(self._keys) == set(self._values.keys())
 
     def __eq__(self, other):
         if isinstance(other, AttrDict):
@@ -449,6 +451,7 @@ class AttrDict(object):
             if name not in self._keys:
                 self._keys.append(name)
             self._values[name] = value
+        assert set(self._keys) == set(self._values.keys())
 
     def __setattr__(self, name, value):
         if name in self._internal:
@@ -480,14 +483,65 @@ class AttrDict(object):
         lines.append(' }')
         return '\n'.join(lines)
 
+    def clear(self):
+        self._values.clear()
+        self._keys[:] = []
+        self._ordered = True
+
+    def copy(self):
+        result = self.__class__()
+        if self._default is not None:
+            result._default = self._default
+        result._ordered = self._ordered
+        result._keys = self._keys[:]
+        result._values = self._values.copy()
+        result._illegal = self._illegal
+        assert set(result._keys) == set(result._values.keys())
+        return result
+
+    @classmethod
+    def fromkeys(cls, keys, value):
+        return cls.__class__([(k, value) for k in keys])
+
+    def items(self):
+        return [(k, self._values[k]) for k in self.keys()]
+
     def keys(self):
         if self._ordered:
             return self._keys
         else:
             return sorted(self._keys)
 
-    def items(self):
-        return [(k, self._values[k]) for k in self.keys()]
+    def pop(self, key, default=None):
+        if default is not None:
+            value = self._values.pop(key)
+        else:
+            value = self._values.pop(key, default)
+        if key in self._keys:
+            self._keys.remove(key)
+        return value
+
+    def popitem(self):
+        k, v = self._values.popitem()
+        self._keys.remove(k)
+        return k, v
+
+    def setdefault(self, key, value=None):
+        if key not in self._values:
+            self._keys.append(key)
+        if value is None:
+            result = self._values.setdefault(key)
+        else:
+            result = self._values.setdefault(key, value)
+        return result
+
+    def update(self, items, **more_items):
+        before = len(self._values)
+        self._values.update(items, **more_items)
+        after = len(self._values)
+        if before != after:
+            self._keys = self._values.keys()
+            self._ordered = False
 
     def values(self):
         return [self._values[k] for k in self.keys()]
@@ -653,3 +707,4 @@ class SchroedingerFile(object):
             self.data = iter([])
             raise exc
     next = __next__
+
