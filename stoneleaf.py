@@ -31,6 +31,7 @@ import sys as _sys
 import aenum as _aenum
 from collections import defaultdict, OrderedDict
 
+
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
 DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
@@ -384,7 +385,7 @@ class AttrDict(object):
         if name not in self._values:
             raise KeyError("%s: no such key" % name)
         self._values.pop(name)
-        self._keys.remove(self._keys.index(name))
+        self._keys.remove(name)
         assert set(self._keys) == set(self._values.keys())
 
     def __delattr__(self, name):
