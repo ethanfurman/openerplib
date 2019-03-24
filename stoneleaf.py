@@ -30,6 +30,7 @@ import os as _os
 import sys as _sys
 import aenum as _aenum
 from collections import defaultdict, OrderedDict
+from warnings import warn
 
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
@@ -40,7 +41,7 @@ DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
 
 ALL_RECORDS = [(1,'=',1)]
 
-class MissingRecord(Exception):
+class MissingRecord(UserWarning):
     "records not found during id search"
 
 def get_records(
@@ -79,12 +80,19 @@ def get_records(
         if isinstance(ids, (int,long)):
             single = True
             ids = [ids]
-    result = Query(model, ids, domain, fields, context=context).records
-    if ids and len(result) != len(ids):
-        found = set([r.id for r in result])
-        missing = sorted([i for i in ids if i not in found])
-        if missing:
-            raise MissingRecord('missing record(s): %s' % ', '.join([str(m) for m in missing]))
+        result = model.read(ids, fields=fields, context=context)
+        if len(result) != len(ids):
+            found = set([r.id for r in result])
+            missing = sorted([i for i in ids if i not in found])
+            if missing:
+                warn(
+                    'some ids filtered out -- perhaps inactive records?\n%s'
+                    % ', '.join([str(m) for m in missing]),
+                    UserWarning,
+                    stacklevel=2,
+                    )
+    else:
+        result = model.search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order, context=context)
     if max_qty is not None and len(result) > max_qty:
         raise ValueError('no more than %s records expected for %r, but received %s'
                 % (max_qty, ids or domain, len(result)))
