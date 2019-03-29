@@ -727,6 +727,26 @@ class SchroedingerFile(object):
     next = __next__
 
 
+class UpdateFile(object):
+    "loops through lines of filename *if it exists* (no error if missing)"
+    def __init__(self, filename):
+        try:
+            with open(filename) as source:
+                self.data = source.readlines()
+        except IOError:
+            self.data = []
+        self.row = -1
+    def __iter__(self):
+        return self
+
+    def __next__(self):     # just plain 'next' in python 2
+        try:
+            self.row += 1
+            return self.data[self.row]
+        except IndexError:
+            raise StopIteration
+    next = __next__
+
 def chunk(stream, size):
     while stream:
         chunk, stream = stream[:size], stream[size:]
