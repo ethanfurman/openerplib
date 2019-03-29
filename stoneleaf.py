@@ -76,28 +76,37 @@ def get_records(
     elif not fields:
         fields = model.fields_get_keys()
     single = False
+    result = []
+    if not ids:
+        ids = model.search(
+                domain=domain,
+                offset=offset,
+                limit=limit or False,
+                order=order or False,
+                context=context or {},
+                )
     if ids:
         if isinstance(ids, (int,long)):
             single = True
             ids = [ids]
-        result = model.read(ids, fields=fields, context=context)
-        if len(result) != len(ids):
-            found = set([r.id for r in result])
-            missing = sorted([i for i in ids if i not in found])
-            if missing:
-                warn(
-                    'some ids filtered out -- perhaps inactive records?\n%s'
-                    % ', '.join([str(m) for m in missing]),
-                    UserWarning,
-                    stacklevel=2,
-                    )
-    else:
-        result = model.search_read(domain=domain, fields=fields, offset=offset, limit=limit, order=order, context=context)
-    if max_qty is not None and len(result) > max_qty:
-        raise ValueError('no more than %s records expected for %r, but received %s'
-                % (max_qty, ids or domain, len(result)))
-    if single:
-        result = result[0]
+        for ids_segment in chunk(ids, 1024):
+            segment = model.read(ids_segment, fields=fields, context=context or {})
+            if len(segment) != len(ids_segment):
+                found = set([r.id for r in segment])
+                missing = sorted([i for i in ids_segment if i not in found])
+                if missing:
+                    warn(
+                        'some ids filtered out -- perhaps inactive records?\n%s'
+                        % ', '.join([str(m) for m in missing]),
+                        UserWarning,
+                        stacklevel=2,
+                        )
+            result.extend(segment)
+        if max_qty is not None and len(result) > max_qty:
+            raise ValueError('no more than %s records expected for %r, but received %s'
+                    % (max_qty, ids or domain, len(result)))
+        if single:
+            result = result[0]
     return result
 
 class Query(object):
@@ -717,3 +726,8 @@ class SchroedingerFile(object):
             raise exc
     next = __next__
 
+
+def chunk(stream, size):
+    while stream:
+        chunk, stream = stream[:size], stream[size:]
+        yield chunk
