@@ -32,6 +32,7 @@ import aenum as _aenum
 from collections import defaultdict, OrderedDict
 from warnings import warn
 
+py_ver = _sys.version_info[:2]
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
@@ -312,25 +313,37 @@ def _normalize(d, fields=None):
             res[key] = value
     return res
 
-class Many2One(_aenum.NamedTuple):
-    id = 0, "OpenERP id of record"
-    name = 1, "_rec_name field of record"
+class IDEquality(object):
+    "compares two objects by id attribute and/or integer value"
 
     def __eq__(self, other):
-        if isinstance(other, (int, long)):
-            return self[0] == other
-        elif isinstance(other, self.__class__):
-            return self[0] == other[0]
+        if not self.id:
+            return False
+        elif isinstance(other, (int, long)):
+            return self.id == other
+        elif isinstance(other, IDEquality):
+            return self.id == other.id
         else:
             return NotImplemented
 
     def __ne__(self, other):
-        if isinstance(other, (int, long)):
-            return self[0] != other
-        elif isinstance(other, self.__class__):
-            return self[0] != other[0]
+        if not self.id:
+            return False
+        elif isinstance(other, (int, long)):
+            return self.id != other
+        elif isinstance(other, IDEquality):
+            return self.id != other.id
         else:
             return NotImplemented
+
+    def __bool__(self):
+        return bool(self.id)
+    __nonzero__ = __bool__
+
+class Many2One(IDEquality, _aenum.NamedTuple):
+    id = 0, "OpenERP id of record"
+    name = 1, "_rec_name field of record"
+
 
 class AttrDict(object):
     """
@@ -751,3 +764,68 @@ def chunk(stream, size):
     while stream:
         chunk, stream = stream[:size], stream[size:]
         yield chunk
+
+def PropertyNames(cls):
+    for name, thing in cls.__dict__.items():
+        if (
+                hasattr(thing, '__get__')
+                or hasattr(thing, '__set__')
+                or hasattr(thing, '__delete__')
+                ) and (
+                getattr(thing, 'name', False) is None
+            ):
+            # looks like a descriptor, give it a name
+            setattr(thing, 'name', name)
+    return cls
+
+
+class NullType(object):
+
+    __slots__ = ()
+
+    def __new__(cls):
+        return cls._null
+
+    if py_ver >= (2, 6):
+        __hash__ = None
+    else:
+        def __hash__(self):
+            raise TypeError("unhashable type: 'NullType'")
+
+    if py_ver < (3, 0):
+        def __nonzero__(self):
+            return False
+    else:
+        def __bool__(self):
+            return False
+
+    def __repr__(self):
+        return '<null>'
+
+NullType._null = object.__new__(NullType)
+Null = NullType()
+
+
+class SetOnce(object):
+    """
+    property that allows setting payload once
+    """
+
+    def __init__(self, name=None):
+        self.name = name
+
+    def __get__(self, parent, cls):
+        if parent is None:
+            return self
+        elif self.name not in parent.__dict__:
+            return Null
+        else:
+            return parent.__dict__[self.name]
+
+    def __set__(self, parent, value):
+        if self.name in parent.__dict__:
+            raise AttributeError('attribute %r already set' % (self.name, ))
+        elif value is Null:
+            return
+        else:
+            parent.__dict__[self.name] = value
