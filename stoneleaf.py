@@ -112,7 +112,7 @@ def get_records(
 
 class Query(object):
 
-    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, context=None, _parent=None):
+    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, order=None, context=None, _parent=None):
         # fields may be modified (reminder: changes will be seen by caller)
         if context is None:
             context = {}
@@ -124,7 +124,7 @@ class Query(object):
             if isinstance(ids, (int,long)):
                 ids = [ids]
         elif domain:
-            ids = model.search(domain, context=context)
+            ids = model.search(domain, order=order, context=context)
         # IDs might be zero if there are no matching parent fields
         #
         # save current fields as ordering information since fields itself may be modified
@@ -135,7 +135,7 @@ class Query(object):
         else:
             # _parent = (field_name, 'Display Name')
             parent_field = '%s/' % _parent[0]
-            parent_display = '%s / ' % _parent[1]
+            parent_display = '%s -> ' % _parent[1]
         self.names = {}.fromkeys([parent_field+n for n in fields])
         #
         main_query = QueryDomain(model, fields, ids)
@@ -188,7 +188,7 @@ class Query(object):
                     # save names
                     for n, f in sub_field_defs.items():
                         self.names[parent_field+main_field+'/'+n] = (
-                                parent_display + main_display + ' / ' + f['string']
+                                parent_display + main_display + ' -> ' + f['string']
                                 )
         main_query.run()
         # gather ids from main query
@@ -272,6 +272,7 @@ class QueryDomain(object):
                     self.ids,
                     None, # domain
                     self.fields,
+		    None, # order
                     self.context,
                     _parent=self._parent_field,
                     )
