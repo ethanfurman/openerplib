@@ -272,7 +272,7 @@ class QueryDomain(object):
                     self.ids,
                     None, # domain
                     self.fields,
-		    None, # order
+                    None, # order
                     self.context,
                     _parent=self._parent_field,
                     )
@@ -427,6 +427,9 @@ class AttrDict(object):
         self._values.pop(name)
         self._keys.remove(name)
         assert set(self._keys) == set(self._values.keys())
+
+    def __hash__(self):
+        return hash(tuple(sorted(self._keys)))
 
     def __eq__(self, other):
         if isinstance(other, AttrDict):
