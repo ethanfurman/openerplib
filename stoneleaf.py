@@ -342,9 +342,18 @@ class IDEquality(object):
     __nonzero__ = __bool__
 
 class Many2One(IDEquality, _aenum.NamedTuple):
+
     id = 0, "OpenERP id of record"
     name = 1, "_rec_name field of record"
 
+    def __str__(self):
+        return str(self.essence())
+
+    def essence(self):
+        if self.name.islower() and '.' in self.name and ',' in self.name:
+            return self.id
+        else:
+            return self.name
 
 class AttrDict(object):
     """
