@@ -39,12 +39,21 @@ import xmlrpclib
 import logging
 import urllib2
 import random
+from aenum import Enum
+from datetime import date, datetime
+from dbf import Date, DateTime
 from stoneleaf import AttrDict, Many2One
 
 try:
     import json
 except ImportError:
     import simplejson as json
+
+DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
+DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
+DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
+    DEFAULT_SERVER_DATE_FORMAT,
+    DEFAULT_SERVER_TIME_FORMAT)
 
 _logger = logging.getLogger(__name__)
 
@@ -315,6 +324,20 @@ class Model(object):
             """
             self.connection.check_login(False)
             self.__logger.debug(args)
+            #
+            # pre-process
+            #
+            # ensure everything is marshalable
+            new_args = []
+            for i, a in enumerate(args):
+                if isinstance(a, (AttrDict, dict, list, tuple)):
+                    a = pfm(a)
+                new_args.append(a)
+            args = tuple(new_args)
+            for k, v in kwds.items():
+                if isinstance(v, (AttrDict, dict, list, tuple)):
+                    kwds[k] = pfm(v)
+            # method specific endeavors
             if method == 'create':
                 # get the values, fields, and default values
                 new_values = kwds.pop('values', None) or args[0]
@@ -339,6 +362,12 @@ class Model(object):
                 # finally, update the defaults from the passed in values
                 default_values.update(new_values)
                 args = (default_values, ) + args[1:]
+            #
+            elif method == 'read':
+                # ids can actually be a domain, so support a domain keyword
+                if 'domain' in kwds:
+                    kwds['ids'] = kwds.pop('domain')
+            #
             elif method == 'search':
                 # 'domain' keyword is actualy 'args' (stupid), so switch 'domain' to 'args'
                 # if present
@@ -347,6 +376,16 @@ class Model(object):
                 elif 'domain' in kwds:
                     kwds['args'] = kwds['domain']
                     del kwds['domain']
+            #
+            elif method == 'write':
+                # ensure values are OpenERP appropriate
+                ids = kwds.pop('ids', None) or args[0]
+                values = kwds.pop('values', None) or args[1]
+                values = pfm(values)
+                args = (ids, values) + args[2:]
+            #
+            # call method
+            #
             result = self.connection.get_service('object').execute_kw(
                                                     self.connection.database,
                                                     self.connection.user_id,
@@ -356,9 +395,14 @@ class Model(object):
                                                     args,
                                                     kwds
                                                     )
+            #
+            # post-process
+            #
             if method == "read":
                 if isinstance(result, list) and len(result) > 0 and "id" in result[0]:
-                    ids = kwds.pop('ids', None) or args[0]
+                    # 'ids' may have been a domain, so get the actual ids from the
+                    # returned records
+                    ids = [r['id'] for r in result]
                     if 'fields' in kwds:
                         fields = kwds['fields']
                     elif len(args) > 1:
@@ -389,12 +433,26 @@ class Model(object):
                             # and update the original records
                             for record in result:
                                 record[f] = [x2many[f][id] for id in record[f]]
-
-
                     index = {}
                     for r in result:
                         index[r['id']] = _normalize(r, fields=fields)
                     result = [index[x] for x in ids if x in index]
+            elif isinstance(result, dict):
+                try:
+                    result = _normalize(result)
+                except Exception:
+                    pass
+            elif isinstance(result, (list, tuple)):
+                try:
+                    new_result = []
+                    for v in result:
+                        if isinstance(v, dict):
+                            v = _normalize(v)
+                        new_result.append(v)
+                    result = type(result)(new_result)
+                except Exception:
+                    pass
+            #
             self.__logger.debug('result: %r', result)
             return result
         return proxy
@@ -485,6 +543,47 @@ def _normalize(d, fields=None):
             res[key] = value
     return res
 
+def pfm(values):
+    if isinstance(values, (dict, AttrDict)):
+        new_values = {}
+        for k, v in values.items():
+            if not v:
+                new_values[k] = False
+            elif isinstance(v, (date, Date)):
+                new_values[k] = v.strftime(DEFAULT_SERVER_DATE_FORMAT)
+            elif isinstance(v, (datetime, DateTime)):
+                new_values[k] = v.strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+            elif isinstance(v, Many2One):
+                new_values[k] = v.id
+            elif isinstance(v, Enum):
+                new_values[k] = v.value
+            elif isinstance(v, (dict, AttrDict, list, tuple)):
+                new_values[k] = pfm(v)
+            else:
+                new_values[k] = v
+        return new_values
+    elif isinstance(values, Many2One):
+        return values.id
+    elif isinstance(values, (list, tuple)):
+        new_list = []
+        for v in values:
+            if not v:
+                new_list.append(False)
+            elif isinstance(v, (date, Date)):
+                new_list.append(v.strftime(DEFAULT_SERVER_DATE_FORMAT))
+            elif isinstance(v, (datetime, DateTime)):
+                new_list.append(v.strftime(DEFAULT_SERVER_DATETIME_FORMAT))
+            elif isinstance(v, Many2One):
+                new_list.append(v.id)
+            elif isinstance(v, Enum):
+                new_list.append(v.value)
+            elif isinstance(v, (dict, AttrDict, list, tuple)):
+                new_list.append(pfm(v))
+            else:
+                new_list.append(v)
+        return type(values)(new_list)
+    else:
+        raise ValueError('not sure how to convert %r' % (values, ))
 
 class OpenERP(object):
 

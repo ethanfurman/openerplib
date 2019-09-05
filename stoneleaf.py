@@ -34,12 +34,6 @@ from warnings import warn
 
 py_ver = _sys.version_info[:2]
 
-DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
-DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
-DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
-    DEFAULT_SERVER_DATE_FORMAT,
-    DEFAULT_SERVER_TIME_FORMAT)
-
 ALL_RECORDS = [(1,'=',1)]
 
 class MissingRecord(UserWarning):
