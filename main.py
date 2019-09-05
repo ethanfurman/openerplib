@@ -39,7 +39,7 @@ import xmlrpclib
 import logging
 import urllib2
 import random
-from stoneleaf import _normalize
+from stoneleaf import AttrDict, Many2One
 
 try:
     import json
@@ -300,6 +300,8 @@ class Model(object):
         self.connection = connection
         self.model_name = model_name
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
+        for key, value in self._get_vars_().items():
+            setattr(self, key, value)
 
     def __getattr__(self, method):
         """
@@ -363,6 +365,32 @@ class Model(object):
                         fields = args[1]
                     else:
                         fields = None
+                    # find all x2many fields and convert values to Many2One
+                    field_defs = self.fields_get(allfields=fields)
+                    x2many = {}
+                    for f, d in field_defs.items():
+                        if d['type'] in ('many2many','one2many'):
+                            link_table = self.connection.get_model(d['relation'])
+                            link_ids = list(set([
+                                    id
+                                    for record in result
+                                    for id in record[f]
+                                    ]))
+                            link_records = [
+                                    Many2One(r.id, r[link_table._rec_name])
+                                    for r in link_table.read(
+                                            link_ids,
+                                            fields=['id', link_table._rec_name],
+                                            )]
+                            x2many[f] = dict([
+                                (m2o.id, m2o)
+                                for m2o in link_records
+                                ])
+                            # and update the original records
+                            for record in result:
+                                record[f] = [x2many[f][id] for id in record[f]]
+
+
                     index = {}
                     for r in result:
                         index[r['id']] = _normalize(r, fields=fields)
@@ -429,6 +457,33 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
     if hostname and database and login and password and not skip_check:
         connection.get_model('res.users').search([('id','=',0)])
     return connection
+
+def _normalize(d, fields=None):
+    'recursively convert each dict into a AttrDict'
+    # fields may be modified
+    res = AttrDict()
+    if fields is None:
+        fields = d.keys()
+    if 'id' in d and 'id' not in fields:
+        fields.insert(0, 'id')
+    other = set(d.keys()) - set(fields)
+    fields.extend(list(other))
+    for key in fields:
+        value = d[key]
+        if isinstance(value, dict):
+            res[key] = _normalize(value)
+        elif isinstance(value, list) and value and isinstance(value[0], dict) and not isinstance(value[0], AttrDict):
+            res[key] = [_normalize(v) for v in value]
+        elif (
+                isinstance(value, list)
+            and len(value) == 2
+            and isinstance(value[0], (int, long))
+            and isinstance(value[1], basestring)
+            ):
+            res[key] = Many2One(*value)
+        else:
+            res[key] = value
+    return res
 
 
 class OpenERP(object):

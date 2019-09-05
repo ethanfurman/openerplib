@@ -138,27 +138,29 @@ class Query(object):
             parent_display = '%s -> ' % _parent[1]
         self.names = {}.fromkeys([parent_field+n for n in fields])
         #
+        unique_fields = []
+        for field in fields:
+            field = field.split('/')[0]
+            if field not in unique_fields:
+                unique_fields.append(field)
+        field_defs = model.fields_get(unique_fields, context=context)
+        #
         main_query = QueryDomain(model, fields, ids)
         self.query = main_query
         self.sub_queries = sub_queries = {}
         many_fields = [f for f in fields if '/' in f]
         if not many_fields:
-            field_defs = self.field_defs = model.fields_get(main_query.fields, context=context)
+            self.field_defs = field_defs
             # save names
             for n, f in field_defs.items():
                 self.names[parent_field+n] = parent_display + f['string']
         else:
-            unique_fields = []
-            for f in fields:
-                f = f.split('/')[0]
-                if f not in unique_fields:
-                    unique_fields.append(f)
             main_query.fields[:] = unique_fields
             nested = defaultdict(list)
             for f in many_fields:
                 main_field, sub_field = f.split('/', 1)
                 nested[main_field].append(sub_field)
-            field_defs = self.field_defs = model.fields_get(main_query.fields, context=context)
+            self.field_defs = field_defs
             # save names
             for n, f in field_defs.items():
                 self.names[parent_field+n] = parent_display + f['string']
@@ -286,33 +288,6 @@ class QueryDomain(object):
             # update cache_key as _normalize may have modified list of fields returned
             cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
             self._cache[cache_key] = records, id_map
-
-def _normalize(d, fields=None):
-    'recursively convert each dict into a AttrDict'
-    # fields may be modified
-    res = AttrDict()
-    if fields is None:
-        fields = d.keys()
-    if 'id' in d and 'id' not in fields:
-        fields.insert(0, 'id')
-    other = set(d.keys()) - set(fields)
-    fields.extend(list(other))
-    for key in fields:
-        value = d[key]
-        if isinstance(value, dict):
-            res[key] = _normalize(value)
-        elif isinstance(value, list) and value and isinstance(value[0], dict) and not isinstance(value[0], AttrDict):
-            res[key] = [_normalize(v) for v in value]
-        elif (
-                isinstance(value, list)
-            and len(value) == 2
-            and isinstance(value[0], (int, long))
-            and isinstance(value[1], basestring)
-            ):
-            res[key] = Many2One(*value)
-        else:
-            res[key] = value
-    return res
 
 class IDEquality(object):
     "compares two objects by id attribute and/or integer value"
