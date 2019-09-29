@@ -361,7 +361,7 @@ class Model(object):
                     default_values[many] = new_many
                 # finally, update the defaults from the passed in values
                 default_values.update(new_values)
-                args = (default_values, ) + args[1:]
+                args = (pfm(default_values), ) + args[1:]
             #
             elif method == 'read':
                 # ids can actually be a domain, so support a domain keyword
@@ -547,7 +547,7 @@ def pfm(values):
     if isinstance(values, (dict, AttrDict)):
         new_values = {}
         for k, v in values.items():
-            if not v:
+            if not v and isinstance(v, (str, int, long)):
                 new_values[k] = False
             elif isinstance(v, (date, Date)):
                 new_values[k] = v.strftime(DEFAULT_SERVER_DATE_FORMAT)
@@ -567,7 +567,7 @@ def pfm(values):
     elif isinstance(values, (list, tuple)):
         new_list = []
         for v in values:
-            if not v:
+            if not v and isinstance(v, (str, int, long)):
                 new_list.append(False)
             elif isinstance(v, (date, Date)):
                 new_list.append(v.strftime(DEFAULT_SERVER_DATE_FORMAT))

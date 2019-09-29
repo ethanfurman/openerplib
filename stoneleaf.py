@@ -118,7 +118,7 @@ class Query(object):
             if isinstance(ids, (int,long)):
                 ids = [ids]
         elif domain:
-            ids = model.search(domain, order=order, context=context)
+            ids = model.search(domain, order=order or False, context=context or {})
         # IDs might be zero if there are no matching parent fields
         #
         # save current fields as ordering information since fields itself may be modified
@@ -225,6 +225,9 @@ class Query(object):
         self.records = main_query.records
         self.id_map = main_query.id_map
 
+    def __iter__(self):
+        return iter(tuple(self.records))
+
 
 class QueryDomain(object):
 
@@ -305,6 +308,9 @@ class IDEquality(object):
             return self.id != other.id
         else:
             return NotImplemented
+
+    def __hash__(self):
+        return hash(self.id)
 
     def __bool__(self):
         return bool(self.id)
