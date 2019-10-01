@@ -282,6 +282,8 @@ class QueryDomain(object):
                 (r.id, r)
                 for r in records
                 ])
+            # put back into order of ids
+            records = [id_map[id] for id in self.ids]
             # update cache_key as _normalize may have modified list of fields returned
             cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
             self._cache[cache_key] = records, id_map
