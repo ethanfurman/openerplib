@@ -106,7 +106,7 @@ def get_records(
 
 class Query(object):
 
-    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, order=None, context=None, _parent=None):
+    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, order=None, context=None, unique=False, _parent=None):
         # fields may be modified (reminder: changes will be seen by caller)
         if context is None:
             context = {}
@@ -222,8 +222,24 @@ class Query(object):
                             sub_query.id_map[id]
                             for id in rec[field]
                             ]
-        self.records = main_query.records
-        self.id_map = main_query.id_map
+        if unique:
+            seen = set()
+            unique_records = []
+            for rec in main_query.records:
+                unique_rec = distinct(rec)
+                if unique_rec in seen:
+                    continue
+                else:
+                    seen.add(unique_rec)
+                    unique_records.append(rec)
+            self.records = unique_records
+            self.id_map = dict([
+                (rec.id, rec)
+                for rec in unique_records
+                ])
+        else:
+            self.records = main_query.records
+            self.id_map = main_query.id_map
 
     def __iter__(self):
         return iter(tuple(self.records))
@@ -287,6 +303,28 @@ class QueryDomain(object):
             # update cache_key as _normalize may have modified list of fields returned
             cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
             self._cache[cache_key] = records, id_map
+
+class IDless(object):
+
+    def __init__(self, obj):
+        self.idfull = obj
+        if isinstance(obj, (AttrDict, dict)):
+            self._hash = tuple([(k, v) for k, v in sorted(obj.items()) if k != 'id'])
+        else:
+            self._hash = tuple(sorted(obj))
+
+    def __hash__(self):
+        return hash(self._hash)
+
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self._hash == other._hash
+
+    def __ne__(self, other):
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self._hash != other._hash
 
 class IDEquality(object):
     "compares two objects by id attribute and/or integer value"
@@ -754,6 +792,20 @@ def chunk(stream, size):
     while stream:
         chunk, stream = stream[:size], stream[size:]
         yield chunk
+
+def distinct(attr_rec):
+    # new_rec = attr_rec.copy()
+    # new_rec.pop('id')
+    for k, v in attr_rec.items():
+        if isinstance(v, AttrDict):
+            attr_rec[k] = distinct(v)
+        elif isinstance(v, list):
+            unique = set()
+            for item in v:
+                unique.add(IDless(item))
+            v = tuple([item.idfull for item in unique])
+            attr_rec[k] = v
+    return IDless(attr_rec)
 
 def PropertyNames(cls):
     for name, thing in cls.__dict__.items():
