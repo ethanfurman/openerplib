@@ -330,7 +330,9 @@ class IDEquality(object):
     "compares two objects by id attribute and/or integer value"
 
     def __eq__(self, other):
-        if not self.id:
+        if self is other:
+            return True
+        elif not self.id:
             return False
         elif isinstance(other, (int, long)):
             return self.id == other
