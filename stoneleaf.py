@@ -868,7 +868,8 @@ class SetOnce(object):
 
     def __set__(self, parent, value):
         if self.name in parent.__dict__:
-            raise AttributeError('attribute %r already set' % (self.name, ))
+            if parent.__dict__[self.name] != value:
+                raise AttributeError('attribute %r already set' % (self.name, ))
         elif value is Null:
             return
         else:
