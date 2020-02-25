@@ -478,7 +478,7 @@ class AttrDict(object):
             result = self._values[name] = self._default()
             return result
         else:
-            raise KeyError("object has no key %r" % name)
+            raise KeyError(name)
 
     def __getattr__(self, name):
         if name in self._values:
@@ -490,7 +490,7 @@ class AttrDict(object):
             result = self._values[name] = self._default()
             return result
         else:
-            raise AttributeError("object has no attribute %r" % name)
+            raise AttributeError(name)
 
     def __iter__(self):
         if self._ordered:
@@ -529,7 +529,7 @@ class AttrDict(object):
     def __repr__(self):
         if not self:
             return "AttrDict()"
-        return "AttrDict([%s])" % ', '.join(["(%r, %r)" % (k, self._values[k]) for k in self.keys()])
+        return "AttrDict(%s)" % ', '.join(["%s=%r" % (k, self._values[k]) for k in self.keys()])
 
     def __str__(self):
         lines = ['{']
