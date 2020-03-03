@@ -218,10 +218,18 @@ class Query(object):
                         rec[field] = sub_query.id_map[rec[field].id]
             elif f_type in ('one2many', 'many2many'):
                 for rec in main_query.records:
-                    rec[field] = [
-                            sub_query.id_map[id]
-                            for id in rec[field]
-                            ]
+                    existing = dict(
+                            (r.id, AttrDict([('<self>', r)]))
+                            for r in rec[field]
+                            )
+                    new_data = []
+                    for id, d in existing.items():
+                        d.update(sub_query.id_map[id])
+                        new_data.append(d)
+                    rec[field] = new_data
+                            # sub_query.id_map[id]
+                            # for id in rec[field]
+                            # ]
         if unique:
             seen = set()
             unique_records = []
