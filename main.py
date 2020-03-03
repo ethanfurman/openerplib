@@ -40,9 +40,11 @@ import logging
 import urllib2
 import random
 from aenum import Enum
+from base64 import b64decode
 from datetime import date, datetime
 from dbf import Date, DateTime
 from stoneleaf import AttrDict, Many2One
+from scription import bytes, unicode
 
 try:
     import json
@@ -311,6 +313,23 @@ class Model(object):
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
         for key, value in self._get_vars_().items():
             setattr(self, key, value)
+        self._columns = self.fields_get()
+        self._text_fields = []
+        self._binary_fields = []
+        self._many_fields = []
+        self._date_fields = []
+        self._datetime_fields = []
+        for f, d in self._columns.items():
+            if d['type'] in ('char', 'html', 'text'):
+                self._text_fields.append(f)
+            elif d['type'] in ('binary', ):
+                self._binary_fields.append(f)
+            elif d['type'] in ('one2many', 'many2many'):
+                self._many_fields.append(f)
+            elif d['type'] in ('date', ):
+                self._date_fields.append(f)
+            elif d['type'] in ('datetime', ):
+                self._datetime_fields.append(f)
 
     def __getattr__(self, method):
         """
@@ -341,7 +360,7 @@ class Model(object):
             if method == 'create':
                 # get the values, fields, and default values
                 new_values = kwds.pop('values', None) or args[0]
-                fields = self.fields_get()
+                fields = self._columns
                 default_values = self.default_get(fields.keys())
                 # take special care with x2many fields 'cause they come to us as a list of
                 # ids which we must transform into a list of delete and add commands such as
@@ -408,13 +427,40 @@ class Model(object):
                     elif len(args) > 1:
                         fields = args[1]
                     else:
-                        fields = None
+                        fields = self._columns.keys()
                     # find all x2many fields and convert values to Many2One
-                    field_defs = self.fields_get(allfields=fields)
+                    # find all text fields and convert values to unicode
+                    # find all binary fields and convert to bytes
+                        # field_defs = self.fields_get(allfields=fields)
                     x2many = {}
-                    for f, d in field_defs.items():
-                        if d['type'] in ('many2many','one2many'):
-                            link_table = self.connection.get_model(d['relation'])
+                        # for f, d in field_defs.items():
+                    for f in fields:
+                        if f in self._text_fields:
+                            for r in result:
+                                if r[f] is False:
+                                    continue
+                                if not isinstance(r[f], unicode):
+                                    r[f] = r[f].decode('utf-8')
+                        elif f in self._binary_fields:
+                            for r in result:
+                                if r[f] is False:
+                                    continue
+                                if not isinstance(r[f], bytes):
+                                    r[f] = b64decode(r[f].encode('utf-8'))
+                                else:
+                                    r[f] = b64decode(r[f])
+                        elif f in self._date_fields:
+                            for r in result:
+                                if r[f] is False:
+                                    continue
+                                r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT)
+                        elif f in self._datetime_fields:
+                            for r in result:
+                                if r[f] is False:
+                                    continue
+                                r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT)
+                        elif f in self._many_fields:
+                            link_table = self.connection.get_model(self._columns[f]['relation'])
                             link_ids = list(set([
                                     id
                                     for record in result
