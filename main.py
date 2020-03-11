@@ -418,6 +418,10 @@ class Model(object):
             # post-process
             #
             if method == "read":
+                one_only = False
+                if isinstance(result, dict):
+                    one_only = True
+                    result = [result]
                 if isinstance(result, list) and len(result) > 0 and "id" in result[0]:
                     # 'ids' may have been a domain, so get the actual ids from the
                     # returned records
@@ -483,6 +487,8 @@ class Model(object):
                     for r in result:
                         index[r['id']] = _normalize(r, fields=fields)
                     result = [index[x] for x in ids if x in index]
+                if one_only:
+                    [result] = result
             elif isinstance(result, dict):
                 try:
                     result = _normalize(result)
