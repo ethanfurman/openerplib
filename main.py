@@ -314,6 +314,12 @@ class Model(object):
         for key, value in self._get_vars_().items():
             setattr(self, key, value)
         self._columns = self.fields_get()
+        if 'id' not in self._columns:
+            self._columns.id = AttrDict(
+                    type='integer',
+                    string='ID',
+                    readonly=True,
+                    )
         self._text_fields = []
         self._binary_fields = []
         self._many_fields = []
