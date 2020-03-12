@@ -326,6 +326,9 @@ class Model(object):
         self._date_fields = []
         self._datetime_fields = []
         for f, d in self._columns.items():
+            if '.' in f:
+                # TODO: ignoring mirrored fields
+                continue
             if d['type'] in ('char', 'html', 'text'):
                 self._text_fields.append(f)
             elif d['type'] in ('binary', ):
@@ -585,6 +588,9 @@ def _normalize(d, fields=None):
     other = set(d.keys()) - set(fields)
     fields.extend(list(other))
     for key in fields:
+        if '.' in key:
+            # TODO: ignoring mirrored fields
+            continue
         value = d[key]
         if isinstance(value, dict):
             res[key] = _normalize(value)
