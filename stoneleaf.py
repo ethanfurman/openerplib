@@ -437,8 +437,8 @@ class AttrDict(object):
                     self._keys.append(key)
         if kwargs:
             self._ordered = False
-            self._keys = list(set(self._keys + kwargs.keys()))
             _values.update(kwargs)
+            self._keys = list(set(self._keys + kwargs.keys()))
         assert set(self._keys) == set(self._values.keys())
 
     def __contains__(self, key):
@@ -533,6 +533,7 @@ class AttrDict(object):
             if name not in self._keys:
                 self._keys.append(name)
             self._values[name] = value
+        assert set(self._keys) == set(self._values.keys())
 
     def __repr__(self):
         if not self:
@@ -556,6 +557,7 @@ class AttrDict(object):
         self._values.clear()
         self._keys[:] = []
         self._ordered = True
+        assert set(self._keys) == set(self._values.keys())
 
     def copy(self):
         result = self.__class__()
@@ -588,6 +590,7 @@ class AttrDict(object):
             value = self._values.pop(key, default)
         if key in self._keys:
             self._keys.remove(key)
+        assert set(self._keys) == set(self._values.keys())
         return value
 
     def popitem(self):
@@ -602,6 +605,7 @@ class AttrDict(object):
             result = self._values.setdefault(key)
         else:
             result = self._values.setdefault(key, value)
+        assert set(self._keys) == set(self._values.keys())
         return result
 
     def update(self, items, **more_items):
@@ -611,6 +615,7 @@ class AttrDict(object):
         if before != after:
             self._keys = self._values.keys()
             self._ordered = False
+        assert set(self._keys) == set(self._values.keys())
 
     def values(self):
         return [self._values[k] for k in self.keys()]
