@@ -313,13 +313,17 @@ class Model(object):
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
         for key, value in self._get_vars_().items():
             setattr(self, key, value)
-        self._columns = self.fields_get()
+        self._columns = self.own_fields_get()
+        self._all_columns = self.fields_get()
+        id = AttrDict(
+                type='integer',
+                string='ID',
+                readonly=True,
+                )
         if 'id' not in self._columns:
-            self._columns.id = AttrDict(
-                    type='integer',
-                    string='ID',
-                    readonly=True,
-                    )
+            self._columns.id = id
+        if 'id' not in self._all_columns:
+            self._all_columns.id = id
         self._text_fields = []
         self._binary_fields = []
         self._many_fields = []
@@ -369,7 +373,7 @@ class Model(object):
             if method == 'create':
                 # get the values, fields, and default values
                 new_values = kwds.pop('values', None) or args[0]
-                fields = self._columns
+                fields = self._all_columns
                 default_values = self.default_get(fields.keys())
                 # take special care with x2many fields 'cause they come to us as a list of
                 # ids which we must transform into a list of delete and add commands such as
@@ -440,7 +444,7 @@ class Model(object):
                     elif len(args) > 1:
                         fields = args[1]
                     else:
-                        fields = self._columns.keys()
+                        fields = self._all_columns.keys()
                     # find all x2many fields and convert values to Many2One
                     # find all text fields and convert values to unicode
                     # find all binary fields and convert to bytes
@@ -473,7 +477,7 @@ class Model(object):
                                     continue
                                 r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT)
                         elif f in self._many_fields:
-                            link_table = self.connection.get_model(self._columns[f]['relation'])
+                            link_table = self.connection.get_model(self._all_columns[f]['relation'])
                             link_ids = list(set([
                                     id
                                     for record in result
