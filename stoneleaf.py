@@ -106,7 +106,7 @@ def get_records(
 
 class Query(object):
 
-    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, order=None, context=None, unique=False, _parent=None):
+    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, order=None, context=None, unique=False, constraints=(), _parent=None):
         # fields may be modified (reminder: changes will be seen by caller)
         if context is None:
             context = {}
@@ -139,7 +139,7 @@ class Query(object):
                 unique_fields.append(field)
         field_defs = model.fields_get(unique_fields, context=context)
         #
-        main_query = QueryDomain(model, fields, ids)
+        main_query = QueryDomain(model, fields, ids, constraints=constraints)
         self.query = main_query
         self.sub_queries = sub_queries = {}
         many_fields = [f for f in fields if '/' in f]
@@ -258,7 +258,7 @@ class QueryDomain(object):
     _cache = dict()       # key: model.model_name, tuple(fields), tuple(ids)
     _cache_key = None
 
-    def __init__(self, model, fields, ids=None, context=None, _parent=None):
+    def __init__(self, model, fields, ids=None, context=None, constraints=(), _parent=None):
         # fields is the /same/ fields object from Query
         self.model = model          # OpenERP model to query
         self.fields = fields        # specific fields to gather
@@ -266,6 +266,7 @@ class QueryDomain(object):
             ids = []
         self.ids = ids              # record ids to retrieve
         self.context = context or {}
+        self.constraints = constraints
         self._parent_field = _parent
         self.query = None
         if any(['/' in f for f in self.fields]):
@@ -305,8 +306,11 @@ class QueryDomain(object):
             id_map = dict([
                 (r.id, r)
                 for r in records
+                if all (c(r) for c in self.constraints)
                 ])
-            # put back into order of ids
+            # remove ids that didn't pass constraints
+            self.ids = [id for id in self.ids if id in id_map]
+            # then put records back into order of ids
             records = [id_map[id] for id in self.ids]
             # update cache_key as _normalize may have modified list of fields returned
             cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
