@@ -445,6 +445,16 @@ class Model(object):
                         fields = args[1]
                     else:
                         fields = self._all_columns.keys()
+                    # check for duplicates in fields
+                    if len(fields) != len(set(fields)):
+                        seen = set()
+                        duplicates = []
+                        for f in fields:
+                            if f in seen:
+                                duplicates.append(f)
+                            else:
+                                seen.add(f)
+                        raise ValueError('duplicate name(s) in `fields`: %s' % ', '.join(sorted(duplicates)))
                     # find all x2many fields and convert values to Many2One
                     # find all text fields and convert values to unicode
                     # find all binary fields and convert to bytes
@@ -534,6 +544,16 @@ class Model(object):
         :param context: The context.
         :return: A list of dictionaries containing all the specified fields.
         """
+        # check for duplicates in fields
+        if len(fields) != len(set(fields)):
+            seen = set()
+            duplicates = []
+            for f in fields:
+                if f in seen:
+                    duplicates.append(f)
+                else:
+                    seen.add(f)
+            raise ValueError('duplicate name(s) in `fields`: %s' % ', '.join(sorted(duplicates)))
         record_ids = self.search(domain or [], offset, limit or False, order or False, context or {})
         if not record_ids: return []
         records = self.read(record_ids, fields or [], context or {})
