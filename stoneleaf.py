@@ -565,12 +565,8 @@ class AttrDict(object):
 
     def copy(self):
         result = self.__class__()
-        if self._default is not None:
-            result._default = self._default
-        result._ordered = self._ordered
-        result._keys = self._keys[:]
-        result._values = self._values.copy()
-        result._illegal = self._illegal
+        for name in self._internal:
+            object.__setattr__(result, name, getattr(self, name))
         assert set(result._keys) == set(result._values.keys())
         return result
 
@@ -588,7 +584,7 @@ class AttrDict(object):
             return sorted(self._keys)
 
     def pop(self, key, default=None):
-        if default is not None:
+        if default is None:
             value = self._values.pop(key)
         else:
             value = self._values.pop(key, default)
@@ -600,6 +596,7 @@ class AttrDict(object):
     def popitem(self):
         k, v = self._values.popitem()
         self._keys.remove(k)
+        assert set(self._keys) == set(self._values.keys())
         return k, v
 
     def setdefault(self, key, value=None):
