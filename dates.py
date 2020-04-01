@@ -148,15 +148,25 @@ def local_datetime():
     return dt
 
 def local_to_utc(dt):
+    # ensures that dt is a UTC date/time
+    #
+    # takes a tz-aware time/datetime and converts to UTC
+    #
     # takes a naive time/datetime, stamps it with LOCALTIME,
     # and converts to UTC
+    #
     if not dt:
         return False
+    if dt.tzinfo and dt.tzinfo.zone == 'UTC':
+        return dt
     is_time = isinstance(dt, (time, Time))
     if is_time:
         dt = DateTime.combine(Date.today(), dt)
-    dt = dt._datetime
-    dt = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt)).astimezone(UTC)
+    if not dt.tzinfo:
+        dt = dt._datetime
+        dt = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt))
+    if dt.tzinfo.zone != 'UTC':
+        dt = dt.astimezone(UTC)
     if is_time:
         return dt.time()
     return dt

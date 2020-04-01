@@ -41,6 +41,7 @@ import urllib2
 import random
 from aenum import Enum
 from base64 import b64decode
+from dates import local_to_utc
 from datetime import date, datetime
 from dbf import Date, DateTime
 from stoneleaf import AttrDict, Many2One
@@ -635,43 +636,33 @@ def pfm(values):
     if isinstance(values, (dict, AttrDict)):
         new_values = {}
         for k, v in values.items():
-            if not v and isinstance(v, (str, int, long)):
-                new_values[k] = False
-            elif isinstance(v, (date, Date)):
-                new_values[k] = v.strftime(DEFAULT_SERVER_DATE_FORMAT)
-            elif isinstance(v, (datetime, DateTime)):
-                new_values[k] = v.strftime(DEFAULT_SERVER_DATETIME_FORMAT)
-            elif isinstance(v, Many2One):
-                new_values[k] = v.id
-            elif isinstance(v, Enum):
-                new_values[k] = v.value
-            elif isinstance(v, (dict, AttrDict, list, tuple)):
-                new_values[k] = pfm(v)
-            else:
-                new_values[k] = v
+            new_values[k] = _convert(v)
         return new_values
     elif isinstance(values, Many2One):
         return values.id
     elif isinstance(values, (list, tuple)):
         new_list = []
         for v in values:
-            if not v and isinstance(v, (str, int, long)):
-                new_list.append(False)
-            elif isinstance(v, (date, Date)):
-                new_list.append(v.strftime(DEFAULT_SERVER_DATE_FORMAT))
-            elif isinstance(v, (datetime, DateTime)):
-                new_list.append(v.strftime(DEFAULT_SERVER_DATETIME_FORMAT))
-            elif isinstance(v, Many2One):
-                new_list.append(v.id)
-            elif isinstance(v, Enum):
-                new_list.append(v.value)
-            elif isinstance(v, (dict, AttrDict, list, tuple)):
-                new_list.append(pfm(v))
-            else:
-                new_list.append(v)
+            new_list.append(_convert(v))
         return type(values)(new_list)
     else:
         raise ValueError('not sure how to convert %r' % (values, ))
+
+def _convert(value):
+    if not value and isinstance(value, (str, int, long)):
+        return False
+    elif isinstance(value, (date, Date)):
+        return local_to_utc(value).strftime(DEFAULT_SERVER_DATE_FORMAT)
+    elif isinstance(value, (datetime, DateTime)):
+        return local_to_utc(value).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+    elif isinstance(value, Many2One):
+        return value.id
+    elif isinstance(value, Enum):
+        return value.value
+    elif isinstance(value, (dict, AttrDict, list, tuple)):
+        return pfm(value)
+    else:
+        return value
 
 class OpenERP(object):
 
