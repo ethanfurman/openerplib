@@ -481,7 +481,7 @@ class Model(object):
                             for r in result:
                                 if r[f] is False:
                                     continue
-                                r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT).replace(tzinfo=UTC)
+                                r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT)
                         elif f in self._datetime_fields:
                             for r in result:
                                 if r[f] is False:
