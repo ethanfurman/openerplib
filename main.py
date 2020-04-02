@@ -41,7 +41,7 @@ import urllib2
 import random
 from aenum import Enum
 from base64 import b64decode
-from dates import local_to_utc
+from dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
 from stoneleaf import AttrDict, Many2One
@@ -481,12 +481,12 @@ class Model(object):
                             for r in result:
                                 if r[f] is False:
                                     continue
-                                r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT)
+                                r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT).replace(tzinfo=UTC)
                         elif f in self._datetime_fields:
                             for r in result:
                                 if r[f] is False:
                                     continue
-                                r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT)
+                                r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
                         elif f in self._many_fields:
                             link_table = self.connection.get_model(self._all_columns[f]['relation'])
                             link_ids = list(set([
