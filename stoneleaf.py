@@ -565,9 +565,11 @@ class AttrDict(object):
 
     def copy(self):
         result = self.__class__()
-        for name in self._internal:
-            object.__setattr__(result, name, getattr(self, name))
-        assert set(result._keys) == set(result._values.keys())
+        result._illegal = self._illegal
+        result._default = self._default
+        result._ordered = self._ordered
+        result._values.update(self._values.copy())
+        result._keys = self._keys[:]
         return result
 
     @classmethod
