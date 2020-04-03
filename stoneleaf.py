@@ -379,10 +379,13 @@ class Many2One(IDEquality, _aenum.NamedTuple):
         return str(self.essence())
 
     def essence(self):
-        if self.name.islower() and '.' in self.name and ',' in self.name:
+        target = self
+        while isinstance(target.name, self.__class__):
+            target = target.name
+        if target.name.islower() and '.' in target.name and ',' in target.name:
             return self.id
         else:
-            return self.name
+            return target.name
 
 class AttrDict(object):
     """
