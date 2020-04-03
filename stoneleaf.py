@@ -36,6 +36,32 @@ py_ver = _sys.version_info[:2]
 
 ALL_RECORDS = [(1,'=',1)]
 
+class NullType(object):
+
+    __slots__ = ()
+
+    def __new__(cls):
+        return cls._null
+
+    if py_ver >= (2, 6):
+        __hash__ = None
+    else:
+        def __hash__(self):
+            raise TypeError("unhashable type: 'NullType'")
+
+    if py_ver < (3, 0):
+        def __nonzero__(self):
+            return False
+    else:
+        def __bool__(self):
+            return False
+
+    def __repr__(self):
+        return '<null>'
+NullType._null = object.__new__(NullType)
+Null = NullType()
+
+
 class MissingRecord(UserWarning):
     "records not found during id search"
 
@@ -588,8 +614,8 @@ class AttrDict(object):
         else:
             return sorted(self._keys)
 
-    def pop(self, key, default=None):
-        if default is None:
+    def pop(self, key, default=Null):
+        if default is Null:
             value = self._values.pop(key)
         else:
             value = self._values.pop(key, default)
@@ -604,10 +630,10 @@ class AttrDict(object):
         assert set(self._keys) == set(self._values.keys())
         return k, v
 
-    def setdefault(self, key, value=None):
+    def setdefault(self, key, value=Null):
         if key not in self._values:
             self._keys.append(key)
-        if value is None:
+        if value is Null:
             result = self._values.setdefault(key)
         else:
             result = self._values.setdefault(key, value)
@@ -842,31 +868,6 @@ def PropertyNames(cls):
     return cls
 
 
-class NullType(object):
-
-    __slots__ = ()
-
-    def __new__(cls):
-        return cls._null
-
-    if py_ver >= (2, 6):
-        __hash__ = None
-    else:
-        def __hash__(self):
-            raise TypeError("unhashable type: 'NullType'")
-
-    if py_ver < (3, 0):
-        def __nonzero__(self):
-            return False
-    else:
-        def __bool__(self):
-            return False
-
-    def __repr__(self):
-        return '<null>'
-
-NullType._null = object.__new__(NullType)
-Null = NullType()
 
 
 class SetOnce(object):
