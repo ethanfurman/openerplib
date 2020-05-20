@@ -652,7 +652,7 @@ def _convert(value):
     if not value and isinstance(value, (str, int, long)):
         return False
     elif isinstance(value, (date, Date)):
-        return local_to_utc(value).strftime(DEFAULT_SERVER_DATE_FORMAT)
+        return value.strftime(DEFAULT_SERVER_DATE_FORMAT)
     elif isinstance(value, (datetime, DateTime)):
         return local_to_utc(value).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
     elif isinstance(value, Many2One):
