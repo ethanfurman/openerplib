@@ -28,5 +28,5 @@
 # 
 ##############################################################################
 
-from main import *
-from stoneleaf import *
+from .main import *
+from .stoneleaf import *

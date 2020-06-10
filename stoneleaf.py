@@ -400,6 +400,7 @@ class Many2One(IDEquality, _aenum.NamedTuple):
 
     id = 0, "OpenERP id of record"
     name = 1, "_rec_name field of record"
+    model = 2, "model of record"
 
     def __str__(self):
         return str(self.essence())
@@ -427,10 +428,10 @@ class AttrDict(object):
     _values = {}
     _keys = []
 
-    def __init__(self, *args, **kwargs):
-        "kwargs is evaluated last"
-        if 'default' in kwargs:
-            self._default = kwargs.pop('default')
+    def __init__(self, *args, **kwds):
+        "kwds is evaluated last"
+        if 'default' in kwds:
+            self._default = kwds.pop('default')
         self._ordered = True
         self._keys = []
         self._values = _values = {}
@@ -468,10 +469,10 @@ class AttrDict(object):
                 _values[key] = value
                 if key not in self._keys:
                     self._keys.append(key)
-        if kwargs:
+        if kwds:
             self._ordered = False
-            _values.update(kwargs)
-            self._keys = list(set(self._keys + kwargs.keys()))
+            _values.update(kwds)
+            self._keys = list(set(self._keys + list(kwds.keys())))
         assert set(self._keys) == set(self._values.keys())
 
     def __contains__(self, key):

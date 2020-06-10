@@ -35,22 +35,37 @@ Home page: http://pypi.python.org/pypi/openerp-client-lib
 Code repository: https://code.launchpad.net/~niv-openerp/openerp-client-lib/trunk
 """
 
-import xmlrpclib
+try:
+    from xmlrpclib import Fault, ServerProxy
+except ImportError:
+    from xmlrpc.client import Fault, ServerProxy
+
+try:
+    from urllib2 import Request, urlopen
+except ImportError:
+    from urllib.request import Request, urlopen
+
 import logging
-import urllib2
 import random
 from aenum import Enum
 from base64 import b64decode
-from dates import local_to_utc, UTC
+from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
-from stoneleaf import AttrDict, Many2One
+from .stoneleaf import AttrDict, Many2One
 from scription import bytes, unicode
 
 try:
     import json
 except ImportError:
     import simplejson as json
+
+try:
+    long
+    baseinteger = int, long
+except NameError:
+    long = int
+    baseinteger = int,
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
@@ -96,7 +111,7 @@ class XmlRPCConnector(Connector):
 
     def send(self, service_name, method, *args):
         url = '%s/%s' % (self.url, service_name)
-        service = xmlrpclib.ServerProxy(url)
+        service = ServerProxy(url)
         return getattr(service, method)(*args)
 
 class XmlRPCSConnector(XmlRPCConnector):
@@ -124,10 +139,10 @@ def json_rpc(url, fct_name, params):
         "params": params,
         "id": random.randint(0, 1000000000),
     }
-    req = urllib2.Request(url=url, data=json.dumps(data), headers={
+    req = Request(url=url, data=json.dumps(data), headers={
         "Content-Type":"application/json",
     })
-    result = urllib2.urlopen(req)
+    result = urlopen(req)
     result = json.load(result)
     if result.get("error", None):
         raise JsonRPCException(result["error"])
@@ -312,25 +327,26 @@ class Model(object):
         self.connection = connection
         self.model_name = model_name
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
-        for key, value in self._get_vars_().items():
-            setattr(self, key, value)
-        self._columns = self.own_fields_get()
+        # for key, value in self._get_vars_().items():
+        #     setattr(self, key, value)
+        # self._columns = self.own_fields_get()
         self._all_columns = self.fields_get()
         id = AttrDict(
                 type='integer',
                 string='ID',
                 readonly=True,
                 )
-        if 'id' not in self._columns:
-            self._columns.id = id
+        # if 'id' not in self._columns:
+        #     self._columns.id = id
         if 'id' not in self._all_columns:
             self._all_columns.id = id
         self._text_fields = []
         self._binary_fields = []
-        self._many_fields = []
+        self._2one_fields = []
+        self._2many_fields = []
         self._date_fields = []
         self._datetime_fields = []
-        for f, d in self._columns.items():
+        for f, d in self._all_columns.items():
             if '.' in f:
                 # TODO: ignoring mirrored fields
                 continue
@@ -338,8 +354,10 @@ class Model(object):
                 self._text_fields.append(f)
             elif d['type'] in ('binary', ):
                 self._binary_fields.append(f)
+            elif d['type'] in ('many2one', ):
+                self._2one_fields.append(f)
             elif d['type'] in ('one2many', 'many2many'):
-                self._many_fields.append(f)
+                self._2many_fields.append(f)
             elif d['type'] in ('date', ):
                 self._date_fields.append(f)
             elif d['type'] in ('datetime', ):
@@ -397,9 +415,20 @@ class Model(object):
                 args = (pfm(default_values), ) + args[1:]
             #
             elif method == 'read':
+                # convert any kwds to args
+                # - ids, fields, context (optional)
                 # ids can actually be a domain, so support a domain keyword
                 if 'domain' in kwds:
                     kwds['ids'] = kwds.pop('domain')
+                if 'ids' in kwds:
+                    if args:
+                        # error, let OpenERP handle it
+                        pass
+                    else:
+                        args = (kwds.pop('ids'), )
+                if 'fields' in kwds:
+                    args += (kwds.pop('fields'), )
+
             #
             elif method == 'search':
                 # 'domain' keyword is actualy 'args' (stupid), so switch 'domain' to 'args'
@@ -487,15 +516,23 @@ class Model(object):
                                 if r[f] is False:
                                     continue
                                 r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
-                        elif f in self._many_fields:
-                            link_table = self.connection.get_model(self._all_columns[f]['relation'])
+                        elif f in self._2one_fields:
+                            link_table_name = self._all_columns[f]['relation']
+                            for r in result:
+                                if r[f] is False:
+                                    continue
+                                # r[f] == [id, text]
+                                r[f] = Many2One(r[f][0], r[f][1], link_table_name)
+                        elif f in self._2many_fields:
+                            link_table_name = self._all_columns[f]['relation']
+                            link_table = self.connection.get_model(link_table_name)
                             link_ids = list(set([
                                     id
                                     for record in result
                                     for id in record[f]
                                     ]))
                             link_records = [
-                                    Many2One(r.id, r[link_table._rec_name])
+                                    Many2One(r.id, r[link_table._rec_name], link_table_name)
                                     for r in link_table.read(
                                             link_ids,
                                             fields=['id', link_table._rec_name],
@@ -624,7 +661,7 @@ def _normalize(d, fields=None):
         elif (
                 isinstance(value, list)
             and len(value) == 2
-            and isinstance(value[0], (int, long))
+            and isinstance(value[0], baseinteger)
             and isinstance(value[1], basestring)
             ):
             res[key] = Many2One(*value)

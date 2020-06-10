@@ -46,6 +46,11 @@ DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
 
+dates = date, Date
+times = time, Time
+datetimes = datetime, DateTime
+moments = dates + times + datetimes
+
 try:
     # get timezone where server is physically located
     with open('/etc/timezone') as tz:
@@ -59,7 +64,7 @@ if system_timezone:
 else:
     EFF_TIME = UTC
 
-def str_to_datetime(string):
+def str_to_datetime(string, localtime=True):
     """
     Converts a UTC string to a datetime object using OpenERP's
     datetime string format (example: '2011-12-01 15:12:35').
@@ -70,7 +75,9 @@ def str_to_datetime(string):
     if not string:
         return False
     dt = datetime.strptime(string.split(".")[0], DEFAULT_SERVER_DATETIME_FORMAT)
-    dt = UTC.localize(dt).astimezone(LOCAL_TIME)
+    dt = UTC.localize(dt)
+    if localtime:
+        dt = dt.astimezone(LOCAL_TIME)
     return dt
 
 def str_to_date(string):
@@ -82,7 +89,7 @@ def str_to_date(string):
         return False
     return date.strptime(string, DEFAULT_SERVER_DATE_FORMAT)
 
-def str_to_time(string):
+def str_to_time(string, localtime=True):
     """
     Converts a UTC string to a time object using OpenERP's
     time string format (example: '15:12:35').
@@ -94,8 +101,9 @@ def str_to_time(string):
         return False
     t = time.strptime(string.split(".")[0], DEFAULT_SERVER_TIME_FORMAT)
     dt = UTC.localize(datetime.combine(date.today(), t))
-    dt = dt.astimezone(LOCAL_TIME)
-    t = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt.time()))
+    if localtime:
+        dt = dt.astimezone(LOCAL_TIME)
+    t = dt.time()
     return t
 
 def datetime_to_str(dt):
@@ -136,6 +144,32 @@ def time_to_str(t):
         dt = dt.astimezone(UTC)
         t = dt.time()
     return t.strftime(DEFAULT_SERVER_TIME_FORMAT)
+
+def as_str(p):
+    """
+    converts date/time ojbect to a string using OpenERP's format
+    """
+    if isinstance(p, datetimes):
+        return datetime_to_str(p)
+    elif isinstance(p, dates):
+        return date_to_str(p)
+    elif isinstance(p, times):
+        return time_to_str(p)
+    else:
+        raise TypeError('unknown date/time type: %r' % type(p))
+
+def from_str(s):
+    """
+    return Date, Time, or DateTime from string
+    """
+    if ':' in s and '-' in s:
+        return str_to_datetime(s, localtime=False)
+    elif ':' in s:
+        return str_to_time(s, localtime=False)
+    elif '-' in s:
+        return str_to_date(s)
+    else:
+        raise TypeError('unknown date/time format: %r' % (s, ))
 
 def utc_datetime():
     utc_dt = local_datetime().astimezone(UTC)
