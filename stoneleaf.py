@@ -30,6 +30,7 @@ import os as _os
 import sys as _sys
 import aenum as _aenum
 from collections import defaultdict, OrderedDict
+from scription import integer as baseinteger, basestring
 from warnings import warn
 
 py_ver = _sys.version_info[:2]
@@ -64,6 +65,31 @@ Null = NullType()
 
 class MissingRecord(UserWarning):
     "records not found during id search"
+
+def get_xid_records(oe, imd_domain, fields=None):
+    """
+    loads records that match /where/ in ir.model.data
+    """
+    results = []
+    # get ir.model.data records that match names
+    imd_records = dict(
+            ((rec.model, rec.res_id), rec)
+            for rec in get_records(
+                oe, 'ir.model.data',
+                imd_domain,
+                fields=['id','model','res_id','module','name','display_name'],
+                ))
+    model_ids = {}
+    for rec in imd_records.values():
+        model_ids.setdefault(rec.model, {})[rec.res_id] = rec
+    # get actual records with ids that match the ir.model.data records
+    for model, records in model_ids.items():
+        model_records = get_records(oe, model, ids=records.keys(), fields=fields or [])
+        for i, rec in enumerate(model_records):
+            xid_rec = XidRec.fromdict(rec, imd_records[model, rec.id])
+            records[rec.id] = model_records[i] = xid_rec
+        results += sorted(model_records, key=lambda r: r._imd.display_name)
+    return results
 
 def get_records(
         connection, model=None, domain=ALL_RECORDS, fields=[],
@@ -107,7 +133,7 @@ def get_records(
                 context=context or {},
                 )
     if ids:
-        if isinstance(ids, (int,long)):
+        if isinstance(ids, baseinteger):
             single = True
             ids = [ids]
         for ids_segment in chunk(ids, 1024):
@@ -141,7 +167,7 @@ class Query(object):
         if ids:
             if domain and domain != ALL_RECORDS:
                 raise ValueError('Cannot specify both ids and domain (%r and %r)' % (ids, domain))
-            if isinstance(ids, (int,long)):
+            if isinstance(ids, baseinteger):
                 ids = [ids]
         elif domain:
             ids = model.search(domain, order=order or False, context=context or {})
@@ -245,7 +271,7 @@ class Query(object):
             elif f_type in ('one2many', 'many2many'):
                 for rec in main_query.records:
                     existing = dict(
-                            (r.id, AttrDict([('<self>', r)]))
+                            (r.id, AttrDict(('<self>', r)))
                             for r in rec[field]
                             )
                     new_data = []
@@ -372,7 +398,7 @@ class IDEquality(object):
             return True
         elif not self.id:
             return False
-        elif isinstance(other, (int, long)):
+        elif isinstance(other, baseinteger):
             return self.id == other
         elif isinstance(other, IDEquality):
             return self.id == other.id
@@ -382,7 +408,7 @@ class IDEquality(object):
     def __ne__(self, other):
         if not self.id:
             return False
-        elif isinstance(other, (int, long)):
+        elif isinstance(other, baseinteger):
             return self.id != other
         elif isinstance(other, IDEquality):
             return self.id != other.id
@@ -444,8 +470,11 @@ class AttrDict(object):
             # first, see if it's a lone string
             if isinstance(arg, basestring):
                 arg = [(arg, default_factory())]
+            elif isinstance(arg, tuple):
+                # had better be (name, value)
+                arg = [arg, ]
             # next, see if it's a mapping
-            try:
+            elif hasattr(arg, 'items'):
                 new_arg = arg.items()
                 if isinstance(arg, OrderedDict):
                     pass
@@ -454,8 +483,6 @@ class AttrDict(object):
                 else:
                     self._ordered = False
                 arg = new_arg
-            except (AttributeError, ):
-                pass
             # now iterate over it
             for item in arg:
                 if isinstance(item, basestring):
@@ -473,7 +500,7 @@ class AttrDict(object):
             self._ordered = False
             _values.update(kwds)
             self._keys = list(set(self._keys + list(kwds.keys())))
-        assert set(self._keys) == set(self._values.keys())
+        assert set(self._keys) == set(self._values.keys()), "%r is not equal to %r" % (self._keys, self._values.keys())
 
     def __contains__(self, key):
         return key in self._values
@@ -567,12 +594,13 @@ class AttrDict(object):
             if name not in self._keys:
                 self._keys.append(name)
             self._values[name] = value
-        assert set(self._keys) == set(self._values.keys())
+        assert set(self._keys) == set(self._values.keys()), "%r is not equal to %r" % (self._keys, self._values.keys())
 
     def __repr__(self):
+        cls_name = self.__class__.__name__
         if not self:
-            return "AttrDict()"
-        return "AttrDict(%s)" % ', '.join(["%s=%r" % (k, self._values[k]) for k in self.keys()])
+            return "%s()" % cls_name
+        return "%s(%s)" % (cls_name, ', '.join(["%s=%r" % (k, self._values[k]) for k in self.keys()]))
 
     def __str__(self):
         lines = ['{']
@@ -836,6 +864,53 @@ class UpdateFile(object):
             raise StopIteration
     next = __next__
 
+class XidRec(AttrDict):
+    """
+    maintains record information in both the primary table and in ir.model.data
+    """
+
+    _internal = AttrDict._internal + ['_imd', '_fields']
+
+    def __init__(self, fields, imd, *args, **kwds):
+        if imd is None:
+            imd = AttrDict(name=None, module=None, model=None, res_id=None, id=0)
+        elif not isinstance(imd, AttrDict):
+            raise TypeError('imd should be an AttrDict(), not %r' % (type(AttrDict), ))
+        self._imd = imd
+        self._fields = fields or []
+        super(XidRec, self).__init__(*args, **kwds)
+
+    def __setitem__(self, name, value):
+        if name in self._internal:
+            object.__setattr__(self, name, value)
+        elif name in self._fields:
+            if name not in self._keys:
+                self._keys.append(name)
+            self._values[name] = value
+        else:
+            raise KeyError("illegal attribute name: %r" % name)
+        assert set(self._keys) == set(self._values.keys())
+
+    def __setattr__(self, name, value):
+        if name in self._internal:
+            object.__setattr__(self, name, value)
+        elif name in self._fields:
+            if name not in self._keys:
+                self._keys.append(name)
+            self._values[name] = value
+        else:
+            raise AttributeError("illegal attribute name: %r" % name)
+        assert set(self._keys) == set(self._values.keys()), "%r is not equal to %r" % (self._keys, self._values.keys())
+
+    @classmethod
+    def fromdict(cls, data, imd):
+        if imd is None:
+            imd = AttrDict(name=None, module=None, model=None, res_id=None, id=0)
+        elif not isinstance(imd, AttrDict):
+            raise TypeError('imd should be an AttrDict(), not %r' % (type(AttrDict), ))
+        return cls(list(data.keys()), imd, *data.items())
+
+
 def chunk(stream, size):
     while stream:
         chunk, stream = stream[:size], stream[size:]
@@ -867,8 +942,6 @@ def PropertyNames(cls):
             # looks like a descriptor, give it a name
             setattr(thing, 'name', name)
     return cls
-
-
 
 
 class SetOnce(object):

@@ -39,6 +39,7 @@ try:
     from xmlrpclib import Fault, ServerProxy
 except ImportError:
     from xmlrpc.client import Fault, ServerProxy
+Fault
 
 try:
     from urllib2 import Request, urlopen
@@ -53,19 +54,12 @@ from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
 from .stoneleaf import AttrDict, Many2One
-from scription import bytes, unicode
+from scription import bytes, integer as baseinteger, basestring, number
 
 try:
     import json
 except ImportError:
     import simplejson as json
-
-try:
-    long
-    baseinteger = int, long
-except NameError:
-    long = int
-    baseinteger = int,
 
 DEFAULT_SERVER_DATE_FORMAT = "%Y-%m-%d"
 DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
@@ -225,7 +219,8 @@ class Connection(object):
                  database=None,
                  login=None,
                  password=None,
-                 user_id=None):
+                 user_id=None,
+                 ):
         """
         Initialize with login information. The login information is facultative to allow specifying
         it after the initialization of this object.
@@ -327,8 +322,8 @@ class Model(object):
         self.connection = connection
         self.model_name = model_name
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
-        # for key, value in self._get_vars_().items():
-        #     setattr(self, key, value)
+        for key, value in self.model_info().items():
+            setattr(self, key, value)
         # self._columns = self.own_fields_get()
         self._all_columns = self.fields_get()
         id = AttrDict(
@@ -474,7 +469,7 @@ class Model(object):
                     elif len(args) > 1:
                         fields = args[1]
                     else:
-                        fields = self._all_columns.keys()
+                        fields = list(self._all_columns.keys())
                     # check for duplicates in fields
                     if len(fields) != len(set(fields)):
                         seen = set()
@@ -494,35 +489,38 @@ class Model(object):
                     for f in fields:
                         if f in self._text_fields:
                             for r in result:
-                                if r[f] is False:
-                                    continue
-                                if not isinstance(r[f], unicode):
+                                if not r[f]:
+                                    r[f] = False
+                                elif isinstance(r[f], bytes):
                                     r[f] = r[f].decode('utf-8')
                         elif f in self._binary_fields:
                             for r in result:
-                                if r[f] is False:
-                                    continue
-                                if not isinstance(r[f], bytes):
+                                if not r[f]:
+                                    r[f] = False
+                                elif not isinstance(r[f], bytes):
                                     r[f] = b64decode(r[f].encode('utf-8'))
                                 else:
                                     r[f] = b64decode(r[f])
                         elif f in self._date_fields:
                             for r in result:
-                                if r[f] is False:
-                                    continue
-                                r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT)
+                                if not r[f]:
+                                    r[f] = False
+                                else:
+                                    r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT)
                         elif f in self._datetime_fields:
                             for r in result:
-                                if r[f] is False:
-                                    continue
-                                r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
+                                if not r[f]:
+                                    r[f] = False
+                                else:
+                                    r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
                         elif f in self._2one_fields:
                             link_table_name = self._all_columns[f]['relation']
                             for r in result:
-                                if r[f] is False:
-                                    continue
-                                # r[f] == [id, text]
-                                r[f] = Many2One(r[f][0], r[f][1], link_table_name)
+                                if not r[f]:
+                                    r[f] = False
+                                else:
+                                    # r[f] == [id, text]
+                                    r[f] = Many2One(r[f][0], r[f][1], link_table_name)
                         elif f in self._2many_fields:
                             link_table_name = self._all_columns[f]['relation']
                             link_table = self.connection.get_model(link_table_name)
@@ -546,13 +544,13 @@ class Model(object):
                                 record[f] = [x2many[f][id] for id in record[f]]
                     index = {}
                     for r in result:
-                        index[r['id']] = _normalize(r, fields=fields)
+                        index[r['id']] = self._normalize(r, fields=fields)
                     result = [index[x] for x in ids if x in index]
                 if one_only:
                     [result] = result
             elif isinstance(result, dict):
                 try:
-                    result = _normalize(result)
+                    result = self._normalize(result)
                 except Exception:
                     pass
             elif isinstance(result, (list, tuple)):
@@ -560,7 +558,7 @@ class Model(object):
                     new_result = []
                     for v in result:
                         if isinstance(v, dict):
-                            v = _normalize(v)
+                            v = self._normalize(v)
                         new_result.append(v)
                     result = type(result)(new_result)
                 except Exception:
@@ -569,6 +567,37 @@ class Model(object):
             self.__logger.debug('result: %r', result)
             return result
         return proxy
+
+    def _normalize(self, d, fields=None, type=AttrDict):
+        'recursively convert each dict into an AttrDict'
+        # fields may be modified
+        if fields is None:
+            fields = d.keys()
+        if 'id' in d and 'id' not in fields:
+            fields.insert(0, 'id')
+        other = set(d.keys()) - set(fields)
+        fields.extend(list(other))
+        res = AttrDict()
+        for key in fields:
+            if '.' in key:
+                # TODO: ignoring mirrored fields
+                continue
+            value = d[key]
+            if isinstance(value, dict):
+                res[key] = self._normalize(value)
+            elif isinstance(value, list) and value and isinstance(value[0], dict) and not isinstance(value[0], AttrDict):
+                res[key] = [self._normalize(v) for v in value]
+            elif (
+                    isinstance(value, list)
+                and len(value) == 2
+                and isinstance(value[0], baseinteger)
+                and isinstance(value[1], basestring)
+                ):
+                res[key] = Many2One(*(value + [self._all_columns[key].relation]))
+            else:
+                res[key] = value
+        return res
+
 
     def search_read(self, domain=None, fields=None, offset=0, limit=None, order=None, context=None):
         """
@@ -583,6 +612,7 @@ class Model(object):
         :return: A list of dictionaries containing all the specified fields.
         """
         # check for duplicates in fields
+        fields = fields or (self._all_columns.keys())
         if len(fields) != len(set(fields)):
             seen = set()
             duplicates = []
@@ -594,7 +624,7 @@ class Model(object):
             raise ValueError('duplicate name(s) in `fields`: %s' % ', '.join(sorted(duplicates)))
         record_ids = self.search(domain or [], offset, limit or False, order or False, context or {})
         if not record_ids: return []
-        records = self.read(record_ids, fields or [], context or {})
+        records = self.read(record_ids, fields, context or {})
         return records
 
 def get_connector(hostname=None, protocol="xmlrpc", port="auto"):
@@ -619,7 +649,8 @@ def get_connector(hostname=None, protocol="xmlrpc", port="auto"):
         raise ValueError("You must choose xmlrpc, xmlrpcs, jsonrpc or jsonrpcs")
 
 def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
-                 login=None, password=None, user_id=None, skip_check=False):
+                 login=None, password=None, user_id=None, skip_check=False,
+                 ):
     """
     A shortcut method to easily create a connection to a remote OpenERP server.
 
@@ -633,41 +664,14 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
     :param user_id: The user id is a number identifying the user. This is only useful if you
     already know it, in most cases you don't need to specify it.
     """
-    connection = Connection(get_connector(hostname, protocol, port), database, login, password, user_id)
+    connection = Connection(
+            get_connector(hostname, protocol, port),
+            database, login, password, user_id,
+            )
     # if necessary paramaters given, ensure valid connection unless skip_check is True
     if hostname and database and login and password and not skip_check:
         connection.get_model('res.users').search([('id','=',0)])
     return connection
-
-def _normalize(d, fields=None):
-    'recursively convert each dict into a AttrDict'
-    # fields may be modified
-    res = AttrDict()
-    if fields is None:
-        fields = d.keys()
-    if 'id' in d and 'id' not in fields:
-        fields.insert(0, 'id')
-    other = set(d.keys()) - set(fields)
-    fields.extend(list(other))
-    for key in fields:
-        if '.' in key:
-            # TODO: ignoring mirrored fields
-            continue
-        value = d[key]
-        if isinstance(value, dict):
-            res[key] = _normalize(value)
-        elif isinstance(value, list) and value and isinstance(value[0], dict) and not isinstance(value[0], AttrDict):
-            res[key] = [_normalize(v) for v in value]
-        elif (
-                isinstance(value, list)
-            and len(value) == 2
-            and isinstance(value[0], baseinteger)
-            and isinstance(value[1], basestring)
-            ):
-            res[key] = Many2One(*value)
-        else:
-            res[key] = value
-    return res
 
 def pfm(values):
     if isinstance(values, (dict, AttrDict)):
@@ -686,7 +690,7 @@ def pfm(values):
         raise ValueError('not sure how to convert %r' % (values, ))
 
 def _convert(value):
-    if not value and isinstance(value, (str, int, long)):
+    if not value and (isinstance(value, str) or isinstance(value, number)):
         return False
     elif isinstance(value, (date, Date)):
         return value.strftime(DEFAULT_SERVER_DATE_FORMAT)
