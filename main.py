@@ -314,11 +314,15 @@ class Model(object):
     An instance of this class depends on a Connection instance with valid authentication information.
     """
 
+    ir_model_data = None
+
     def __init__(self, connection, model_name):
         """
         :param connection: A valid Connection instance with correct authentication information.
         :param model_name: The name of the model.
         """
+        if self.ir_model_data is None and model_name != 'ir.model.data':
+            self.__class__.ir_model_data = self.__class__(connection, 'ir.model.data')
         self.connection = connection
         self.model_name = model_name
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
@@ -373,18 +377,9 @@ class Model(object):
             #
             # pre-process
             #
-            # ensure everything is marshalable
-            new_args = []
-            for i, a in enumerate(args):
-                if isinstance(a, (AttrDict, dict, list, tuple)):
-                    a = pfm(a)
-                new_args.append(a)
-            args = tuple(new_args)
-            for k, v in kwds.items():
-                if isinstance(v, (AttrDict, dict, list, tuple)):
-                    kwds[k] = pfm(v)
             # method specific endeavors
             if method == 'create':
+                imd_info = kwds.pop('imd_info', None)
                 # get the values, fields, and default values
                 new_values = kwds.pop('values', None) or args[0]
                 fields = self._all_columns
@@ -407,7 +402,7 @@ class Model(object):
                     default_values[many] = new_many
                 # finally, update the defaults from the passed in values
                 default_values.update(new_values)
-                args = (pfm(default_values), ) + args[1:]
+                args = (default_values, ) + args[1:]
             #
             elif method == 'read':
                 # convert any kwds to args
@@ -438,8 +433,19 @@ class Model(object):
                 # ensure values are OpenERP appropriate
                 ids = kwds.pop('ids', None) or args[0]
                 values = kwds.pop('values', None) or args[1]
-                values = pfm(values)
                 args = (ids, values) + args[2:]
+            #
+            # ensure everything is marshalable
+            #
+            new_args = []
+            for i, a in enumerate(args):
+                if isinstance(a, (AttrDict, dict, list, tuple)):
+                    a = pfm(a)
+                new_args.append(a)
+            args = tuple(new_args)
+            for k, v in kwds.items():
+                if isinstance(v, (AttrDict, dict, list, tuple)):
+                    kwds[k] = pfm(v)
             #
             # call method
             #
@@ -455,7 +461,11 @@ class Model(object):
             #
             # post-process
             #
-            if method == "read":
+            if method == "create":
+                if imd_info:
+                    imd_info.res_id = result
+                    imd_info.id = self.ir_model_data.create(pfm(imd_info))
+            elif method == "read":
                 one_only = False
                 if isinstance(result, dict):
                     one_only = True
