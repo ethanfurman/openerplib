@@ -78,7 +78,7 @@ def str_to_datetime(string, localtime=True):
     dt = UTC.localize(dt)
     if localtime:
         dt = dt.astimezone(LOCAL_TIME)
-    return dt
+    return DateTime(dt)
 
 def str_to_date(string):
     """
@@ -87,7 +87,7 @@ def str_to_date(string):
     """
     if not string:
         return False
-    return date.strptime(string, DEFAULT_SERVER_DATE_FORMAT)
+    return Date.strptime(string, DEFAULT_SERVER_DATE_FORMAT)
 
 def str_to_time(string, localtime=True):
     """
@@ -104,7 +104,7 @@ def str_to_time(string, localtime=True):
     if localtime:
         dt = dt.astimezone(LOCAL_TIME)
     t = dt.time()
-    return t
+    return Time(t)
 
 def datetime_to_str(dt):
     """
@@ -179,7 +179,7 @@ def local_datetime():
     # same as utc if timezone not set
     dt = EFF_TIME.normalize(EFF_TIME.localize(datetime.now()))
     dt = dt.astimezone(LOCAL_TIME)
-    return dt
+    return DateTime(dt)
 
 def local_to_utc(dt):
     # ensures that dt is a UTC date/time
@@ -190,17 +190,18 @@ def local_to_utc(dt):
     # and converts to UTC
     #
     if not dt:
-        return False
+        return None
     if dt.tzinfo and dt.tzinfo.zone == 'UTC':
-        return dt
+        return DateTime(dt)
     is_time = isinstance(dt, (time, Time))
     if is_time:
         dt = DateTime.combine(Date.today(), dt)
     if not dt.tzinfo:
         dt = dt._datetime
         dt = LOCAL_TIME.normalize(LOCAL_TIME.localize(dt))
+        dt = DateTime(dt)
     if dt.tzinfo.zone != 'UTC':
-        dt = dt.astimezone(UTC)
+        dt = DateTime(dt.astimezone(UTC))
     if is_time:
         return dt.time()
     return dt
