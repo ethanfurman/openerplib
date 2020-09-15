@@ -34,12 +34,11 @@ OpenERP Client Library
 Home page: http://pypi.python.org/pypi/openerp-client-lib
 Code repository: https://code.launchpad.net/~niv-openerp/openerp-client-lib/trunk
 """
-
+from __future__ import print_function
 try:
     from xmlrpclib import Fault, ServerProxy
 except ImportError:
     from xmlrpc.client import Fault, ServerProxy
-Fault
 
 try:
     from urllib2 import Request, urlopen
@@ -48,13 +47,14 @@ except ImportError:
 
 import logging
 import random
-from aenum import Enum
+from aenum import Enum, NamedTuple
 from base64 import b64decode
 from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
-from .stoneleaf import AttrDict, Many2One
+from .stoneleaf import AttrDict, IDEquality, Many2One, XidRec
 from scription import bytes, integer as baseinteger, basestring, number
+from VSS.address import PostalCode
 
 try:
     import json
@@ -338,29 +338,69 @@ class Model(object):
         # if 'id' not in self._columns:
         #     self._columns.id = id
         if 'id' not in self._all_columns:
-            self._all_columns.id = id
-        self._text_fields = []
-        self._binary_fields = []
-        self._2one_fields = []
-        self._2many_fields = []
-        self._date_fields = []
-        self._datetime_fields = []
+            self._all_columns['id'] = id
+        self._text_fields = set()
+        self._binary_fields = set()
+        self._x2one_fields = set()
+        self._x2many_fields = set()
+        self._date_fields = set()
+        self._datetime_fields = set()
+        self._boolean_fields = set()
+        self._integer_fields = set()
+        self._float_fields = set()
+        self._selection_fields = set()
+        self._as_dbf = {}
         for f, d in self._all_columns.items():
             if '.' in f:
                 # TODO: ignoring mirrored fields
                 continue
-            if d['type'] in ('char', 'html', 'text'):
-                self._text_fields.append(f)
-            elif d['type'] in ('binary', ):
-                self._binary_fields.append(f)
-            elif d['type'] in ('many2one', ):
-                self._2one_fields.append(f)
-            elif d['type'] in ('one2many', 'many2many'):
-                self._2many_fields.append(f)
-            elif d['type'] in ('date', ):
-                self._date_fields.append(f)
-            elif d['type'] in ('datetime', ):
-                self._datetime_fields.append(f)
+            fld_type = d['type']
+            dfn = dbf_field_name(f)
+            if fld_type in ('char', 'html', 'text'):
+                self._text_fields.add(f)
+                if d.get('size', 1024) < 129:
+                    dft = 'C(%d)' % d['size']
+                else:
+                    dft = 'M'
+            elif fld_type in ('binary', ):
+                self._binary_fields.add(f)
+                dft = 'M binary'
+            elif fld_type in ('many2one', ):
+                self._x2one_fields.add(f)
+                dft = 'C(128)'
+            elif fld_type in ('one2many', 'many2many'):
+                self._x2many_fields.add(f)
+                dft = 'M'
+            elif fld_type in ('date', ):
+                self._date_fields.add(f)
+                dft = 'D'
+            elif fld_type in ('datetime', ):
+                self._datetime_fields.add(f)
+                dft = 'T'
+            elif fld_type in ('boolean', ):
+                self._boolean_fields.add(f)
+                dft = 'L'
+            elif fld_type in ('integer', ):
+                self._integer_fields.add(f)
+                dft = 'N(17,0)'
+            elif fld_type in ('float', ):
+                self._float_fields.add(f)
+                digits = d.get('digits')
+                digits = tuple(digits) if digits else (17, 3)
+                dft = 'N(%d, %d)' % digits
+            elif fld_type in ('selection', ):
+                self._selection_fields.add(f)
+                size = 0
+                for db, ud in d['selection']:
+                    db = db and str(db) or ''
+                    size = max(size, len(db))
+                if size < 129:
+                    dft = 'C(%d)' % size
+                else:
+                    dft = 'M'
+            else:
+                dft = 'M'
+            self._as_dbf[f] = DbfNameSpec(dfn, '%s %s' % (dfn, dft))
 
     def __getattr__(self, method):
         """
@@ -382,6 +422,8 @@ class Model(object):
                 imd_info = kwds.pop('imd_info', None)
                 # get the values, fields, and default values
                 new_values = kwds.pop('values', None) or args[0]
+                if imd_info is None and isinstance(new_values, XidRec):
+                    imd_info = new_values._imd
                 fields = self._all_columns
                 default_values = self.default_get(fields.keys())
                 # take special care with x2many fields 'cause they come to us as a list of
@@ -418,6 +460,16 @@ class Model(object):
                         args = (kwds.pop('ids'), )
                 if 'fields' in kwds:
                     args += (kwds.pop('fields'), )
+                if len(args) < 3:
+                    if 'context' not in kwds:
+                        kwds['context'] = {}
+                    kwds['context']['active_test'] = False
+                else:
+                    try:
+                        if 'active_test' not in args[2]:
+                            args[2]['active_test'] = False
+                    except Exception:
+                        pass
 
             #
             elif method == 'search':
@@ -428,6 +480,7 @@ class Model(object):
                 elif 'domain' in kwds:
                     kwds['args'] = kwds['domain']
                     del kwds['domain']
+                kwds.setdefault('context', {})['active_test'] = False
             #
             elif method == 'write':
                 # ensure values are OpenERP appropriate
@@ -464,7 +517,46 @@ class Model(object):
             if method == "create":
                 if imd_info:
                     imd_info.res_id = result
-                    imd_info.id = self.ir_model_data.create(pfm(imd_info))
+                    imd_info.pop('id')
+                    try:
+                        imd_info.id = self.ir_model_data.create(pfm(imd_info))
+                    except Fault as exc:
+                        if "multiple records with the same external ID" in str(exc):
+                            # if existing record points to nothing, update it
+                            [pos_rec_ptr] = self.ir_model_data.search_read(
+                                    domain=[('module','=',imd_info.module),('name','=',imd_info.name)],
+                                    fields=['id','model','res_id'],
+                                    )
+                            pos_recs = self.__class__(self.connection, pos_rec_ptr.model).read(
+                                    pos_rec_ptr.res_id,
+                                    fields=['id'],
+                                    )
+                            if not pos_recs:
+                                # orphaned pointer, update it
+                                self.ir_model_data.write(pos_rec_ptr.id, pfm(imd_info))
+                                imd_info.id = pos_rec_ptr.id
+                                self.__logger.debug('result: %r', result)
+                                return result
+                        # something went wrong, delete the newly created record
+                        self.unlink(result)
+                        raise
+            elif method == "unlink" and result and self.model_name != 'ir.model.data':
+                # find any matching records in ir.model.data and delete them
+                if args:
+                    ids = args[0]
+                else:
+                    ids = kwds['ids']
+                if isinstance(ids, (int, long)):
+                    ids = [ids]
+                target_imd_ids = [
+                        r.id
+                        for r in self.ir_model_data.search_read(
+                            domain=[('model','=',self.model_name),('res_id','in',ids)],
+                            context={'active_test': False},
+                            )]
+                if not self.ir_model_data.unlink(target_imd_ids):
+                    # too late to not delete the original records, but we can emit an error
+                    _logger.error('unable to remove %r ids from ir.model.data: %r' % (self.model_name, ids))
             elif method == "read":
                 one_only = False
                 if isinstance(result, dict):
@@ -500,13 +592,13 @@ class Model(object):
                         if f in self._text_fields:
                             for r in result:
                                 if not r[f]:
-                                    r[f] = False
+                                    r[f] = None
                                 elif isinstance(r[f], bytes):
                                     r[f] = r[f].decode('utf-8')
                         elif f in self._binary_fields:
                             for r in result:
                                 if not r[f]:
-                                    r[f] = False
+                                    r[f] = None
                                 elif not isinstance(r[f], bytes):
                                     r[f] = b64decode(r[f].encode('utf-8'))
                                 else:
@@ -514,24 +606,24 @@ class Model(object):
                         elif f in self._date_fields:
                             for r in result:
                                 if not r[f]:
-                                    r[f] = False
+                                    r[f] = None
                                 else:
                                     r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT)
                         elif f in self._datetime_fields:
                             for r in result:
                                 if not r[f]:
-                                    r[f] = False
+                                    r[f] = None
                                 else:
                                     r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
-                        elif f in self._2one_fields:
+                        elif f in self._x2one_fields:
                             link_table_name = self._all_columns[f]['relation']
                             for r in result:
                                 if not r[f]:
-                                    r[f] = False
+                                    r[f] = None
                                 else:
                                     # r[f] == [id, text]
                                     r[f] = Many2One(r[f][0], r[f][1], link_table_name)
-                        elif f in self._2many_fields:
+                        elif f in self._x2many_fields:
                             link_table_name = self._all_columns[f]['relation']
                             link_table = self.connection.get_model(link_table_name)
                             link_ids = list(set([
@@ -556,6 +648,8 @@ class Model(object):
                     for r in result:
                         index[r['id']] = self._normalize(r, fields=fields)
                     result = [index[x] for x in ids if x in index]
+                # print('*' * 50)
+                # print('returning from OE: %r' % result[0])
                 if one_only:
                     [result] = result
             elif isinstance(result, dict):
@@ -581,14 +675,14 @@ class Model(object):
     def _normalize(self, d, fields=None, type=AttrDict):
         'recursively convert each dict into an AttrDict'
         # fields may be modified
-        if fields is None:
-            fields = d.keys()
+        fields = list(fields or d.keys())
         if 'id' in d and 'id' not in fields:
             fields.insert(0, 'id')
         other = set(d.keys()) - set(fields)
         fields.extend(list(other))
         res = AttrDict()
         for key in fields:
+
             if '.' in key:
                 # TODO: ignoring mirrored fields
                 continue
@@ -604,8 +698,10 @@ class Model(object):
                 and isinstance(value[1], basestring)
                 ):
                 res[key] = Many2One(*(value + [self._all_columns[key].relation]))
-            else:
+            elif key in self._boolean_fields:
                 res[key] = value
+            else:
+                res[key] = None if value is False else value
         return res
 
 
@@ -632,7 +728,7 @@ class Model(object):
                 else:
                     seen.add(f)
             raise ValueError('duplicate name(s) in `fields`: %s' % ', '.join(sorted(duplicates)))
-        record_ids = self.search(domain or [], offset, limit or False, order or False, context or {})
+        record_ids = self.search(domain or [], offset, limit or False, order or False, context=context or {})
         if not record_ids: return []
         records = self.read(record_ids, fields, context or {})
         return records
@@ -684,13 +780,14 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
     return connection
 
 def pfm(values):
+    "prepare for marshalling"
     if isinstance(values, (dict, AttrDict)):
         new_values = {}
         for k, v in values.items():
             new_values[k] = _convert(v)
         return new_values
-    elif isinstance(values, Many2One):
-        return values.id
+    elif isinstance(values, IDEquality):
+        return values.id or False
     elif isinstance(values, (list, tuple)):
         new_list = []
         for v in values:
@@ -700,20 +797,66 @@ def pfm(values):
         raise ValueError('not sure how to convert %r' % (values, ))
 
 def _convert(value):
-    if not value and (isinstance(value, str) or isinstance(value, number)):
+    if not value and (isinstance(value, (str, bool)) or isinstance(value, number)):
         return False
     elif isinstance(value, (date, Date)):
         return value.strftime(DEFAULT_SERVER_DATE_FORMAT)
     elif isinstance(value, (datetime, DateTime)):
         return local_to_utc(value).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
-    elif isinstance(value, Many2One):
-        return value.id
+    elif isinstance(value, IDEquality):
+        return value.id or False
     elif isinstance(value, Enum):
         return value.value
+    elif isinstance(value, PostalCode):
+        return value.code
     elif isinstance(value, (dict, AttrDict, list, tuple)):
         return pfm(value)
+    elif value is None:
+        return False
     else:
         return value
+
+def dbf_field_name(name):
+    if len(name) <= 10:
+        return name
+    names = name.split('_')
+    new_name = []
+    for sn in names:
+        if sn in ('id', 'is', 'home'):
+            continue
+        new_name.append(short.get(sn, sn))
+    name = '_'.join(new_name)
+    if len(name) > 10:
+        name = ''.join(new_name)[:10]
+    return name
+
+short = {
+        'address': 'addr',
+        'credit': 'cr',
+        'debit': 'dr',
+        'description': 'desc',
+        'contact': 'cntc',
+        'date': 'dt',
+        'emergency': 'emrgcy',
+        'employment': 'emp',
+        'exemptions': 'exmpt',
+        'federal': 'fed',
+        'flag': 'flg',
+        'identification': 'ident',
+        'number': 'no',
+        'parent': 'prnt',
+        'pension': 'pensn',
+        'plan': 'pln',
+        'schedule': 'sched',
+        'scheduled': 'sched',
+        'scheduling': 'sched',
+        'special': 'spcl',
+        'state': 'st',
+        'status': 'sts',
+        'total': 'ttl',
+        'transmitter': 'trans',
+        'type': 'typ',
+        }
 
 class OpenERP(object):
 
@@ -723,3 +866,4 @@ class OpenERP(object):
     def __getattr__(self, model):
         setattr(self, model, self.connection.get_model(model))
 
+DbfNameSpec = NamedTuple('DbfNameSpec', ['name', 'spec'])
