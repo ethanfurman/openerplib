@@ -615,8 +615,15 @@ class Query(object):
             self.records = main_query.records
             self.id_map = main_query.id_map
 
+    def __bool__(self):
+        return len(self.recods) != 0
+    __nonzero__ = __bool__
+
     def __iter__(self):
         return iter(tuple(self.records))
+
+    def __len__(self):
+        return len(self.records)
 
 
 class QueryDomain(object):
