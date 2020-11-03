@@ -265,7 +265,7 @@ class AttrDict(object):
 
     def keys(self):
         if self._ordered:
-            return self._keys
+            return list(self._keys)
         else:
             return sorted(self._keys)
 
@@ -358,6 +358,10 @@ class XidRec(AttrDict):
         else:
             raise AttributeError("illegal attribute name: %r" % name)
         assert set(self._keys) == set(self._values.keys()), "%r is not equal to %r" % (self._keys, self._values.keys())
+
+    def copy(self):
+        result = self.__class__(self.keys(), self._imd.copy(), **self)
+        return result
 
     @classmethod
     def fromdict(cls, data, imd, types=None):
