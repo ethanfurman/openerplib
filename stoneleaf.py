@@ -719,12 +719,18 @@ class IDless(object):
         return "IDless(hash=%r)" % (self._hash, )
 
 class IDEquality(object):
-    "compares two objects by id attribute and/or integer value"
+    """
+    compares two objects by id attribute and/or integer value
+
+    ids that are None do not compare equal
+    """
 
     def __eq__(self, other):
         if self is other:
             return True
-        elif isinstance(other, IDEquality):
+        elif self.id is None:
+            return False
+        elif isinstance(other, self.__class__):
             return self.id == other.id
         else:
             return self.id == other
