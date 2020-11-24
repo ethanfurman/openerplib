@@ -340,6 +340,7 @@ class Model(object):
         if 'id' not in self._all_columns:
             self._all_columns['id'] = id
         self._text_fields = set()
+        self._html_fields = set()
         self._binary_fields = set()
         self._x2one_fields = set()
         self._x2many_fields = set()
@@ -356,6 +357,8 @@ class Model(object):
                 continue
             fld_type = d['type']
             dfn = dbf_field_name(f)
+            if fld_type == 'html':
+                self._html_fields.add(f)
             if fld_type in ('char', 'html', 'text'):
                 self._text_fields.add(f)
                 if d.get('size', 1024) < 129:
