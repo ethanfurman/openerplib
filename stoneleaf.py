@@ -758,7 +758,7 @@ class Many2One(IDEquality, _aenum.NamedTuple):
         target = self
         while isinstance(target.name, self.__class__):
             target = target.name
-        if target.name.islower() and '.' in target.name and ',' in target.name:
+        if not target.name or target.name.islower() and '.' in target.name and ',' in target.name:
             return self.id
         else:
             return target.name
