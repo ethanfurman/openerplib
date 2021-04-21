@@ -617,7 +617,7 @@ class Model(object):
                                 if not r[f]:
                                     r[f] = None
                                 else:
-                                    r[f] = DateTime.strptime(r[f], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
+                                    r[f] = DateTime.strptime(r[f].split('.')[0], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
                         elif f in self._x2one_fields:
                             link_table_name = self._all_columns[f]['relation']
                             for r in result:
