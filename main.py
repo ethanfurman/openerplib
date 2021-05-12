@@ -220,6 +220,7 @@ class Connection(object):
                  login=None,
                  password=None,
                  user_id=None,
+                 raw=False
                  ):
         """
         Initialize with login information. The login information is facultative to allow specifying
@@ -231,11 +232,13 @@ class Connection(object):
         :param password: The password of the user.
         :param user_id: The user id is a number identifying the user. This is only useful if you
         already know it, in most cases you don't need to specify it.
+        :param raw: True returns data as-is, False converts data to Python objects.
         """
         self.connector = connector
 
         self.set_login_info(database, login, password, user_id)
         self.user_context = None
+        self.raw = raw
 
     def set_login_info(self, database, login, password, user_id=None):
         """
@@ -286,7 +289,7 @@ class Connection(object):
 
         :param model_name: The name of the model.
         """
-        model = Model(self, model_name)
+        model = Model(self, model_name, raw=self.raw)
         if not transient:
             # make sure model is valid
             model.search([('id','=',0)])
@@ -316,7 +319,7 @@ class Model(object):
 
     ir_model_data = None
 
-    def __init__(self, connection, model_name):
+    def __init__(self, connection, model_name, raw=False):
         """
         :param connection: A valid Connection instance with correct authentication information.
         :param model_name: The name of the model.
@@ -325,6 +328,7 @@ class Model(object):
             self.__class__.ir_model_data = self.__class__(connection, 'ir.model.data')
         self.connection = connection
         self.model_name = model_name
+        self.raw = raw
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
         for key, value in self.model_info().items():
             setattr(self, key, value)
@@ -560,6 +564,9 @@ class Model(object):
                 if not self.ir_model_data.unlink(target_imd_ids):
                     # too late to not delete the original records, but we can emit an error
                     _logger.error('unable to remove %r ids from ir.model.data: %r' % (self.model_name, ids))
+            elif self.raw:
+                # skip any conversions of returned data
+                pass
             elif method == "read":
                 one_only = False
                 if isinstance(result, dict):
@@ -758,7 +765,7 @@ def get_connector(hostname=None, protocol="xmlrpc", port="auto"):
         raise ValueError("You must choose xmlrpc, xmlrpcs, jsonrpc or jsonrpcs")
 
 def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
-                 login=None, password=None, user_id=None, skip_check=False,
+                 login=None, password=None, user_id=None, skip_check=False, raw=False,
                  ):
     """
     A shortcut method to easily create a connection to a remote OpenERP server.
@@ -772,10 +779,12 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
     :param password: The password of the user.
     :param user_id: The user id is a number identifying the user. This is only useful if you
     already know it, in most cases you don't need to specify it.
+    :param skip_check: False verifies that model exists.
+    :param raw: True returns data as-is, False converts data to Python objects.
     """
     connection = Connection(
             get_connector(hostname, protocol, port),
-            database, login, password, user_id,
+            database, login, password, user_id, raw,
             )
     # if necessary paramaters given, ensure valid connection unless skip_check is True
     if hostname and database and login and password and not skip_check:
