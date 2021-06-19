@@ -728,8 +728,6 @@ class IDEquality(object):
     def __eq__(self, other):
         if self is other:
             return True
-        elif self.id is None:
-            return False
         elif isinstance(other, self.__class__):
             return self.id == other.id
         else:

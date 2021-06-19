@@ -397,7 +397,7 @@ class Model(object):
                 dft = 'N(%d, %d)' % digits
             elif fld_type in ('selection', ):
                 self._selection_fields.add(f)
-                size = 0
+                size = 1
                 for db, ud in d['selection']:
                     db = db and str(db) or ''
                     size = max(size, len(db))
@@ -601,7 +601,7 @@ class Model(object):
                     for f in fields:
                         if f in self._text_fields:
                             for r in result:
-                                if not r[f]:
+                                if r[f] is False:
                                     r[f] = None
                                 elif isinstance(r[f], bytes):
                                     r[f] = r[f].decode('utf-8')
