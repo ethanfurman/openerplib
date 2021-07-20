@@ -37,6 +37,16 @@ py_ver = _sys.version_info[:2]
 
 ALL_RECORDS = [(1,'=',1)]
 
+
+class Sentinel(object):
+    def __init__(self, text):
+        self.text = text
+    def __repr__(self):
+        return '<%s>' % self.text
+    def __str__(self):
+        return "Sentinel: %r" % self.text
+
+
 class NullType(object):
 
     __slots__ = ()
@@ -65,6 +75,43 @@ Null = NullType()
 
 class MissingRecord(UserWarning):
     "records not found during id search"
+
+
+_trans_sentinel = Sentinel('no strip argument')
+def translator(frm=u'', to=u'', delete=u'', keep=u'', strip=_trans_sentinel, compress=False):
+    # delete and keep are mutually exclusive
+    if delete and keep:
+        raise ValueError('cannot specify both keep and delete')
+    replacement = replacement_ord = None
+    if len(to) == 1:
+        if frm == u'':
+            replacement = to
+            replacement_ord = ord(to)
+            to = u''
+        else:
+            to = to * len(frm)
+    if len(to) != len(frm):
+        raise ValueError('frm and to should be equal lengths (or to should be a single character)')
+    uni_table = dict(
+            (ord(f), ord(t))
+            for f, t in zip(frm, to)
+            )
+    for ch in delete:
+        uni_table[ord(ch)] = None
+    def translate(s):
+        if isinstance(s, bytes):
+            s = s.decode('latin1')
+        if keep:
+            for chr in set(s) - set(keep):
+                uni_table[ord(chr)] = replacement_ord
+        s = s.translate(uni_table)
+        if strip is not _trans_sentinel:
+            s = s.strip(strip)
+        if replacement and compress:
+            s = replacement.join([p for p in s.split(replacement) if p])
+        return s
+    return translate
+
 
 class AttrDict(object):
     """
@@ -1001,3 +1048,5 @@ class SetOnce(object):
                 raise AttributeError('attribute %r already set to %r (not setting to %r)' % (self.name, parent.__dict__[self.name], value))
         else:
             parent.__dict__[self.name] = value
+
+
