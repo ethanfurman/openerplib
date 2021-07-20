@@ -52,7 +52,7 @@ from base64 import b64decode
 from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
-from .stoneleaf import AttrDict, IDEquality, Many2One, XidRec
+from .utils import AttrDict, IDEquality, Many2One, XidRec
 from scription import bytes, integer as baseinteger, basestring, number
 from VSS.address import PostalCode
 
