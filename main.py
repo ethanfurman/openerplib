@@ -52,7 +52,7 @@ from base64 import b64decode
 from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
-from .utils import AttrDict, IDEquality, Many2One, XidRec
+from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone
 from scription import bytes, integer as baseinteger, basestring, number
 from VSS.address import PostalCode
 
@@ -605,8 +605,8 @@ class Model(object):
                                     r[f] = None
                                 elif isinstance(r[f], bytes):
                                     r[f] = r[f].decode('utf-8')
-                                if f == 'phone':
-                                    r[f] = Phone[r[f]]
+                                if f in ('fax', 'phone'):
+                                    r[f] = Phone(r[f])
                         elif f in self._binary_fields:
                             for r in result:
                                 if not r[f]:
@@ -824,7 +824,7 @@ def _convert(value):
     elif isinstance(value, PostalCode):
         return value.code
     elif isinstance(value, Phone):
-        return value.number
+        return value.number or False
     elif isinstance(value, (dict, AttrDict, list, tuple)):
         return pfm(value)
     elif value is None:
@@ -885,119 +885,3 @@ class OpenERP(object):
 DbfNameSpec = NamedTuple('DbfNameSpec', ['name', 'spec'])
 
 
-class Phone(object):
-    """
-    give some smarts to phone equality, plus extension separation
-    """
-
-    def __init__(number, ext=None):
-        self._number = None
-        self._base = None
-        self._ext = ext and ext(str(ext)) or None
-        data = phone(str(number).strip()) # normalize number
-        if not data.strip('0'):
-            # no number, we're done
-            return
-        # fix double leading zeros
-        if data[:2] == '00':
-            data = '011' + data[2:]
-        # fix leading '+' signs
-        if data[0] == '+':
-            data = '011' + data[1:].replace('+', '')
-        data = data.replace('#', 'x').replace('X','x')
-        if 'x' in data:
-            if ext:
-                raise ValueError("extension in 'number' and 'ext' specified: %r" % ((number, ext), ))
-            data, ext = data.split('x', 1)
-        if ext:
-            ext = ' x%s' % ext
-        if data.startswith('011'):
-            if int(data[3:4]) in (
-                    20, 27, 30, 31, 32, 33, 34, 36, 39, 40, 41, 43, 44, 45, 46, 47, 49, 49,
-                    51, 52, 53, 54, 55, 56, 57, 58, 60, 61, 62, 63, 64, 65, 66,  7, 81, 82,
-                    84, 86, 90, 91, 92, 93, 94, 95, 98,
-                    ):
-                pre = [data[:3], data[3:5]]
-                data = data[5:]
-            else:
-                pre = [data[:3], data[3:6]]
-                data = data[6:]
-            post = [data[-4:]]
-            data = data[:-4]
-            if len(data) % 4 == 0:
-                while data:
-                    post.append(data[-4:])
-                    data = data[:-4]
-            else:
-                while data:
-                    post.append(data[-3:])
-                    data = data[:-3]
-            post.reverse()
-            self._base = '.'.join(pre + post)
-            self._ext = ext
-            self._number = '%s %s' % (self._base, self._ext)
-        elif len(data) not in (7, 10, 11):
-            self._base = data
-            self._ext = ext
-            self._number = '%s %s' % (self._base, self._ext)
-        elif len(data) == 11:
-            if data[0] == '1':
-                data = data[1:]
-            self._base = '%s.%s.%s' % (data[:3], data[3:6], data[6:])
-            self._ext = ext
-            self._number = '%s %s' % (self._base, self._ext)
-        elif len(data) == 7:
-            self._base = '%s.%s' % (data[:3], data[3:])
-            self._ext = ext
-            self._number = '%s %s' % (self._base, self._ext)
-
-    def __eq__(self, other):
-        if not isinstance(other, self.__class__):
-            try:
-                other = self.__class__(other)
-            except AttributeError:
-                return NotImplemented
-        return self._number == other.number
-
-    def __ne__(self, other):
-        if not isinstance(other, self.__class__):
-            try:
-                other = self.__class__(other)
-            except AttributeError:
-                return NotImplemented
-        return self._number != other.number
-
-    def __hash__(self):
-        return hash(self._number)
-
-    def __bool__(self):
-        return bool(self._number)
-    __nonzero__ = __bool__
-
-    def __repr__(self):
-        return "%s(%r, ext=%r)" % (self.__class__.__name__, self.base, self.ext)
-
-    def __str__(self):
-        return self._number
-
-    @property
-    def number(self):
-        return self._number
-
-    @property
-    def base(self):
-        return self._base
-
-    @base.setter
-    def base(self, val):
-        self._base = val
-        self._number = '%s %s' % (self._base, self.ext)
-
-    @property
-    def ext(self):
-        return self._ext
-
-    @ext.setter
-    def ext(self, val):
-        self._ext = ext
-        self._number = '%s %s' % (self._base, self._ext)
