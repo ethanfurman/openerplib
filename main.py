@@ -601,7 +601,7 @@ class Model(object):
                     for f in fields:
                         if f in self._text_fields:
                             for r in result:
-                                if r[f] is False:
+                                if not r[f]:
                                     r[f] = None
                                 elif isinstance(r[f], bytes):
                                     r[f] = r[f].decode('utf-8')

@@ -768,8 +768,6 @@ class IDless(object):
 class IDEquality(object):
     """
     compares two objects by id attribute and/or integer value
-
-    ids that are None do not compare equal
     """
 
     def __eq__(self, other):
@@ -788,6 +786,29 @@ class IDEquality(object):
 
     def __bool__(self):
         return bool(self.id)
+    __nonzero__ = __bool__
+
+class ValueEquality(object):
+    """
+    compares two objects by value attribute
+    """
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        elif isinstance(other, self.__class__):
+            return self.value == other.value
+        else:
+            return self.value == other
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(self.value)
+
+    def __bool__(self):
+        return bool(self.value)
     __nonzero__ = __bool__
 
 class Many2One(IDEquality, _aenum.NamedTuple):
