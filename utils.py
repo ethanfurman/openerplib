@@ -427,7 +427,7 @@ class XidRec(AttrDict):
         return xid_rec
 
 
-def get_xid_records(oe, domain, fields=None, context=None):
+def get_xid_records(oe, domain, subdomain=None, fields=None, context=None):
     """
     loads records that match /where/ in ir.model.data
     """
@@ -446,7 +446,10 @@ def get_xid_records(oe, domain, fields=None, context=None):
         model_ids.setdefault(rec.model, {})[rec.res_id] = rec
     # get actual records with ids that match the ir.model.data records
     for model, records in model_ids.items():
-        model_records = get_records(oe, model, ids=records.keys(), fields=fields or [], context=context)
+        domain = [('id','in',records.keys())]
+        if subdomain is not None:
+            domain.extend(subdomain)
+        model_records = get_records(oe, model, domain=domain, fields=fields or [], context=context)
         for i, rec in enumerate(model_records):
             xid_rec = XidRec.fromdict(rec, imd_records[model, rec.id])
             records[rec.id] = model_records[i] = xid_rec
