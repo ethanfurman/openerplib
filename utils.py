@@ -442,17 +442,17 @@ def get_xid_records(oe, domain, subdomain=None, fields=None, context=None):
                 fields=['id','model','res_id','module','name','display_name'],
                 ))
     model_ids = {}
-    for rec in imd_records.values():
-        model_ids.setdefault(rec.model, {})[rec.res_id] = rec
+    for imd_rec in imd_records.values():
+        model_ids.setdefault(imd_rec.model, {})[imd_rec.res_id] = imd_rec
     # get actual records with ids that match the ir.model.data records
     for model, records in model_ids.items():
         domain = [('id','in',records.keys())]
         if subdomain is not None:
             domain.extend(subdomain)
         model_records = get_records(oe, model, domain=domain, fields=fields or [], context=context)
-        for i, rec in enumerate(model_records):
-            xid_rec = XidRec.fromdict(rec, imd_records[model, rec.id])
-            records[rec.id] = model_records[i] = xid_rec
+        for i, model_rec in enumerate(model_records):
+            xid_rec = XidRec.fromdict(model_rec, imd_records[model, model_rec.id])
+            records[model_rec.id] = model_records[i] = xid_rec
         results += sorted(model_records, key=lambda r: r._imd.display_name)
     return results
 
@@ -488,7 +488,7 @@ def get_records(
             raise ValueError('Cannot specify both fields and skip_fields')
         fields = [f for f in model.fields_get_keys() if f not in skip_fields]
     elif not fields:
-        fields = model.fields_get_keys()
+        fields = sorted(set(model.fields_get_keys()))
     single = False
     result = []
     if not ids:
