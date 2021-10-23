@@ -53,6 +53,7 @@ from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
 from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone
+from pprint import pformat
 from scription import bytes, integer as baseinteger, basestring, number
 from VSS.address import PostalCode
 
@@ -609,18 +610,24 @@ class Model(object):
                                     r[f] = Phone(r[f])
                         elif f in self._binary_fields:
                             for r in result:
-                                if not r[f]:
-                                    r[f] = None
-                                elif not isinstance(r[f], bytes):
-                                    r[f] = b64decode(r[f].encode('utf-8'))
-                                else:
-                                    r[f] = b64decode(r[f])
+                                try:
+                                    if not r[f]:
+                                        r[f] = None
+                                    elif isinstance(r[f], dict):
+                                        r[f] = pformat(r[f])
+                                    elif not isinstance(r[f], bytes):
+                                        r[f] = b64decode(r[f].encode('utf-8'))
+                                    else:
+                                        r[f] = b64decode(r[f])
+                                except:
+                                    if isinstance(r[f], basestring):
+                                        r[f] = ' '.join(r[f].split())
                         elif f in self._date_fields:
                             for r in result:
                                 if not r[f]:
                                     r[f] = None
                                 else:
-                                    r[f] = Date.strptime(r[f], DEFAULT_SERVER_DATE_FORMAT)
+                                    r[f] = Date.strptime(r[f][:10], DEFAULT_SERVER_DATE_FORMAT)
                         elif f in self._datetime_fields:
                             for r in result:
                                 if not r[f]:
@@ -643,11 +650,14 @@ class Model(object):
                                     for record in result
                                     for id in record[f]
                                     ]))
+                            link_fields = ['id']
+                            if link_table._rec_name != 'id':
+                                link_fields.append(link_table._rec_name)
                             link_records = [
                                     Many2One(r.id, r[link_table._rec_name], link_table_name)
                                     for r in link_table.read(
                                             link_ids,
-                                            fields=['id', link_table._rec_name],
+                                            fields=link_fields,
                                             )]
                             x2many[f] = dict([
                                 (m2o.id, m2o)
