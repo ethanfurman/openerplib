@@ -30,7 +30,8 @@ import os as _os
 import sys as _sys
 import aenum as _aenum
 from collections import defaultdict, OrderedDict
-from scription import integer as baseinteger, basestring
+from pprint import pformat
+from scription import integer as baseinteger, basestring, str
 from warnings import warn
 
 py_ver = _sys.version_info[:2]
@@ -582,7 +583,7 @@ class Query(object):
             for main_field, sub_fields in nested.items():
                 field_def = field_defs[main_field]
                 if field_def['type'] not in ('one2many', 'many2many', 'many2one'):
-                    raise TypeError('field %r does not link to another table')
+                    raise TypeError('field %r does not link to another table' % main_field)
                 # save name
                 self.names[parent_field+main_field] = main_display = parent_display+field_def['string']
                 sub_model = model.connection.get_model(field_def['relation'])
@@ -717,6 +718,7 @@ class QueryDomain(object):
         return self._cache[self.cache_key][0]
 
     def run(self):
+        print(repr(self))
         if any(['/' in f for f in self.fields]):
             self.query = Query(
                     self.model,
@@ -831,6 +833,41 @@ class Many2One(IDEquality, _aenum.NamedTuple):
             return self.id
         else:
             return target.name
+
+
+class Binary(object):
+    """
+    wrapper for binary fields
+
+    common values are images, dicts, and lists
+    """
+    def __init__(self, value):
+        self.value = value
+    #
+    def __repr__(self):
+        value = self.value
+        if isinstance(value, (dict, list, tuple)):
+            return 'Binary(%r)' % (value, )
+        elif isinstance(value, bytes):
+            if len(value) < 21:
+                return 'Binary(b%r)' % (value, )
+            else:
+                return 'Binary(b%r)' % (value[:10] + '...' + value[-7:])
+        else:
+            return 'Binary(%r)' % (value.__class__.__name__, )
+    #
+    def __str__(self):
+        value = self.value
+        if isinstance(value, (dict, list, tuple)):
+            return pformat(value)
+        elif isinstance(value, bytes):
+            return 'b%r' % (value[:10] + '...' + value[-7:])
+        else:
+            return repr(value.__class__.__name__)
+    #
+    def __getattr__(self, name):
+        return getattr(self.value, name)
+
 
 class EmbeddedNewlineError(ValueError):
     "Embedded newline found in a quoted field"
@@ -1074,7 +1111,7 @@ class SetOnce(object):
             parent.__dict__[self.name] = value
 
 
-normalize_phone = translator(delete=' -().etET')
+normalize_phone = translator(frm='X#', to='x', keep=u'01234567890x')
 
 class Phone(object):
     """
@@ -1087,7 +1124,7 @@ class Phone(object):
         self._ext = ''
         if not (number or ext):
             return
-        data = normalize_phone(str(number).strip()) # normalize number
+        data = normalize_phone(unicode(number)) # normalize number
         ext = normalize_phone(ext)
         if not (data.strip('0') or ext):
             # no number, we're done
@@ -1098,13 +1135,17 @@ class Phone(object):
         # fix leading '+' signs
         if data[0] == '+':
             data = '011' + data[1:].replace('+', '')
-        data = data.replace('#', 'x').replace('X','x')
         if 'x' in data:
             if ext:
                 raise ValueError("extension in 'number' and 'ext' specified: %r" % ((number, ext), ))
             data, ext = data.split('x', 1)
+            data = data.strip()
+            ext = ext.strip()
         if ext:
             ext = 'x%s' % ext
+        # remove leading '1' long-distance indicator
+        if len(data) == 11 and data[0] == '1':
+            data = data[1:]
         if data.startswith('011'):
             if int(data[3:4]) in (
                     20, 27, 30, 31, 32, 33, 34, 36, 39, 40, 41, 43, 44, 45, 46, 47, 49, 49,
@@ -1130,11 +1171,11 @@ class Phone(object):
             self._base = '.'.join(pre + post)
             self._ext = ext
             self._number = ('%s %s' % (self._base, self._ext)).strip()
-        elif len(data) not in (7, 10, 11):
+        elif len(data) not in (7, 10):
             self._base = data
             self._ext = ext
             self._number = ('%s %s' % (self._base, self._ext)).strip()
-        elif len(data) == 11:
+        elif len(data) == 10:
             if data[0] == '1':
                 data = data[1:]
             self._base = '%s.%s.%s' % (data[:3], data[3:6], data[6:])

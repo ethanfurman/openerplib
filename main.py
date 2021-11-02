@@ -52,9 +52,8 @@ from base64 import b64decode
 from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
-from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone
-from pprint import pformat
-from scription import bytes, integer as baseinteger, basestring, number
+from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone, Binary
+from scription import bytes, integer as baseinteger, basestring, number, str
 from VSS.address import PostalCode
 
 try:
@@ -510,6 +509,7 @@ class Model(object):
             #
             # call method
             #
+            # print('model: %r\n  args: %r\n  kwds: %r' % (self.model_name, args, kwds))
             result = self.connection.get_service('object').execute_kw(
                                                     self.connection.database,
                                                     self.connection.user_id,
@@ -613,15 +613,14 @@ class Model(object):
                                 try:
                                     if not r[f]:
                                         r[f] = None
-                                    elif isinstance(r[f], dict):
-                                        r[f] = pformat(r[f])
+                                    elif isinstance(r[f], (dict, list, tuple)):
+                                        r[f] = Binary(r[f])
                                     elif not isinstance(r[f], bytes):
-                                        r[f] = b64decode(r[f].encode('utf-8'))
+                                        r[f] = Binary(b64decode(r[f].encode('utf-8')))
                                     else:
-                                        r[f] = b64decode(r[f])
+                                        r[f] = Binary(b64decode(r[f]))
                                 except:
-                                    if isinstance(r[f], basestring):
-                                        r[f] = ' '.join(r[f].split())
+                                    r[f] = Binary(r[f])
                         elif f in self._date_fields:
                             for r in result:
                                 if not r[f]:
