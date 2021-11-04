@@ -354,6 +354,7 @@ class Model(object):
         self._integer_fields = set()
         self._float_fields = set()
         self._selection_fields = set()
+        self._enum_fields = {}
         self._as_dbf = {}
         for f, d in self._all_columns.items():
             if '.' in f:
@@ -405,6 +406,13 @@ class Model(object):
                     dft = 'C(%d)' % size
                 else:
                     dft = 'M'
+                enum = d.get('enum')
+                if enum:
+                    name = enum[0]
+                    items = [(m[0], tuple(m[1])) for m in enum[1:]]
+                    enum = SelectionEnum(name, items)
+                    self._enum_fields[f] = enum
+                    setattr(self, name, enum)
             else:
                 dft = 'M'
             self._as_dbf[f] = DbfNameSpec(dfn, '%s %s' % (dfn, dft))
@@ -596,6 +604,7 @@ class Model(object):
                     # find all x2many fields and convert values to Many2One
                     # find all text fields and convert values to unicode
                     # find all binary fields and convert to bytes
+                    # find all selection enums and convert values to enum (or None)
                         # field_defs = self.fields_get(allfields=fields)
                     x2many = {}
                         # for f, d in field_defs.items():
@@ -633,6 +642,13 @@ class Model(object):
                                     r[f] = None
                                 else:
                                     r[f] = DateTime.strptime(r[f].split('.')[0], DEFAULT_SERVER_DATETIME_FORMAT).replace(tzinfo=UTC)
+                        elif f in self._enum_fields:
+                            enum = self._enum_fields[f]
+                            for r in result:
+                                if not r[f]:
+                                    r[f] = None
+                                else:
+                                    r[f] = enum(r[f])
                         elif f in self._x2one_fields:
                             link_table_name = self._all_columns[f]['relation']
                             for r in result:
@@ -828,6 +844,8 @@ def _convert(value):
         return local_to_utc(value).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
     elif isinstance(value, IDEquality):
         return value.id or False
+    elif isinstance(value, SelectionEnum):
+        return value.db
     elif isinstance(value, Enum):
         return value.value
     elif isinstance(value, PostalCode):
@@ -893,4 +911,102 @@ class OpenERP(object):
 
 DbfNameSpec = NamedTuple('DbfNameSpec', ['name', 'spec'])
 
+class Sentinel(object):
+    "provides better help for sentinels"
+
+    def __init__(self, text):
+        self.text = text
+
+    def __repr__(self):
+        return "<%s: %s>" % (self.__class__.__name__, self.text)
+
+    def __str__(self):
+        return '<%s>' % self.text
+
+
+_raise_lookup = Sentinel('raise LookupError')
+
+class SelectionEnum(str, Enum):
+    _init_ = 'db user'
+
+    def __new__(cls, *args, **kwds):
+        count = len(cls.__members__)
+        obj = str.__new__(cls, args[0])
+        obj._count = count
+        obj._value_ = args
+        return obj
+
+    @classmethod
+    def __init_subclass__(cls):
+        "make SelectionEnum class marshallable as string"
+        from xmlrpclib import Marshaller
+        Marshaller.dispatch[cls] = Marshaller.dump_unicode
+
+    def __str__(self):
+        return str(self.db)
+
+    def __repr__(self):
+        return '%s.%s' % (self.__class__.__name__, self._name_)
+
+    def __ge__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count >= other._count
+        else:
+            return NotImplemented
+
+    def __gt__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count > other._count
+        else:
+            return NotImplemented
+
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count <= other._count
+        else:
+            return NotImplemented
+
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count < other._count
+        else:
+            return NotImplemented
+
+    def __getitem__(self, index):
+        return list(self)[index]
+
+    def __iter__(self):
+        "return db value, user value"
+        return iter(self.value)
+
+    def __nonzero__(self):
+        return bool(self.db)
+
+    @staticmethod
+    def _generate_next_value_(name, start, count, values, *args, **kwds):
+        return (name, ) + args
+
+    @classmethod
+    def _missing_name_(cls, index):
+        "supports list-type indexing"
+        return list(cls)[index]
+
+    @classmethod
+    def _missing_value_(cls, value):
+        "support look-up by db name"
+        for member in cls:
+            if member.db == value:
+                return member
+
+    @classmethod
+    def get_member(cls, text, default=_raise_lookup):
+        for member in cls:
+            if member.db == text:
+                return member
+            elif default == _raise_lookup and member.db == default:
+                default = member
+        else:
+            if default is not _raise_lookup:
+                return default
+        raise LookupError('%r not found in %s' % (text, cls.__name__))
 
