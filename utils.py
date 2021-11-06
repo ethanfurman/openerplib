@@ -343,7 +343,7 @@ class AttrDict(object):
         assert set(self._keys) == set(self._values.keys())
         return result
 
-    def update(self, items, **more_items):
+    def update(self, items=(), **more_items):
         before = len(self._values)
         self._values.update(items, **more_items)
         after = len(self._values)
@@ -351,6 +351,10 @@ class AttrDict(object):
             self._keys = self._values.keys()
             self._ordered = False
         assert set(self._keys) == set(self._values.keys())
+
+    def updated(self, items=(), **more_items):
+        self.update(items, **more_items)
+        return self
 
     def values(self):
         return [self._values[k] for k in self.keys()]
