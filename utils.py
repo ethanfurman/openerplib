@@ -1145,7 +1145,7 @@ class Phone(object):
             data, ext = data.split('x', 1)
             data = data.strip()
             ext = ext.strip()
-        if ext:
+        if ext and ext[0] != 'x':
             ext = 'x%s' % ext
         # remove leading '1' long-distance indicator
         if len(data) == 11 and data[0] == '1':
