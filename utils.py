@@ -722,7 +722,6 @@ class QueryDomain(object):
         return self._cache[self.cache_key][0]
 
     def run(self):
-        print(repr(self))
         if any(['/' in f for f in self.fields]):
             self.query = Query(
                     self.model,
