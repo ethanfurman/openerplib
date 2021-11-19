@@ -324,6 +324,19 @@ class Model(object):
         :param connection: A valid Connection instance with correct authentication information.
         :param model_name: The name of the model.
         """
+        self._text_fields = set()
+        self._html_fields = set()
+        self._binary_fields = set()
+        self._x2one_fields = set()
+        self._x2many_fields = set()
+        self._date_fields = set()
+        self._datetime_fields = set()
+        self._boolean_fields = set()
+        self._integer_fields = set()
+        self._float_fields = set()
+        self._selection_fields = set()
+        self._enum_fields = {}
+        self._as_dbf = {}
         if self.ir_model_data is None and model_name != 'ir.model.data':
             self.__class__.ir_model_data = self.__class__(connection, 'ir.model.data')
         self.connection = connection
@@ -343,19 +356,6 @@ class Model(object):
         #     self._columns.id = id
         if 'id' not in self._all_columns:
             self._all_columns['id'] = id
-        self._text_fields = set()
-        self._html_fields = set()
-        self._binary_fields = set()
-        self._x2one_fields = set()
-        self._x2many_fields = set()
-        self._date_fields = set()
-        self._datetime_fields = set()
-        self._boolean_fields = set()
-        self._integer_fields = set()
-        self._float_fields = set()
-        self._selection_fields = set()
-        self._enum_fields = {}
-        self._as_dbf = {}
         for f, d in self._all_columns.items():
             if '.' in f:
                 # TODO: ignoring mirrored fields
@@ -720,25 +720,28 @@ class Model(object):
         res = AttrDict()
         for key in fields:
 
-            if '.' in key:
-                # TODO: ignoring mirrored fields
-                continue
+            # if '.' in key:
+            #     # TODO: ignoring mirrored fields
+            #     continue
             value = d[key]
-            if isinstance(value, dict):
-                res[key] = self._normalize(value)
-            elif isinstance(value, list) and value and isinstance(value[0], dict) and not isinstance(value[0], AttrDict):
-                res[key] = [self._normalize(v) for v in value]
-            elif (
-                    isinstance(value, list)
-                and len(value) == 2
-                and isinstance(value[0], baseinteger)
-                and isinstance(value[1], basestring)
-                ):
-                res[key] = Many2One(*(value + [self._all_columns[key].relation]))
-            elif key in self._boolean_fields:
-                res[key] = value
-            else:
-                res[key] = None if value is False else value
+            try:
+                if isinstance(value, dict):
+                    res[key] = self._normalize(value)
+                elif isinstance(value, list) and value and isinstance(value[0], dict) and not isinstance(value[0], AttrDict):
+                    res[key] = [self._normalize(v) for v in value]
+                elif (
+                        isinstance(value, list)
+                    and len(value) == 2
+                    and isinstance(value[0], baseinteger)
+                    and isinstance(value[1], basestring)
+                    ):
+                    res[key] = Many2One(*(value + [self._all_columns[key].relation]))
+                elif key in self._boolean_fields:
+                    res[key] = value
+                else:
+                    res[key] = None if value is False else value
+            except TypeError:
+                print('\nkey = %r\nvalue = %r\nself._boolean_fields = %r' % (key, value, self._boolean_fields))
         return res
 
 
