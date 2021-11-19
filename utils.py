@@ -247,7 +247,7 @@ class AttrDict(object):
     def __setitem__(self, name, value):
         if name in self._internal:
             object.__setattr__(self, name, value)
-        elif isinstance(name, basestring) and name[0:1] == '_':
+        elif isinstance(name, basestring) and name[0:1] == name[-1:] == '_' and name not in ('__module__','__doc__'):
             raise KeyError("illegal attribute name: %r" % name)
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
@@ -260,7 +260,7 @@ class AttrDict(object):
     def __setattr__(self, name, value):
         if name in self._internal:
             object.__setattr__(self, name, value)
-        elif name[0] == '_' or name in self._illegal:
+        elif name in self._illegal or name[0:1] == name[-1:] == '_' and name not in ('__module__','__doc__'):
             raise AttributeError("illegal attribute name: %r" % name)
         elif not isinstance(name, basestring):
             raise ValueError('attribute names must be str, not %r' % type(name))
