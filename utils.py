@@ -219,6 +219,8 @@ class AttrDict(object):
             return self._values[name]
         elif self._default:
             result = self._values[name] = self._default()
+            self._keys.append(name)
+            assert set(self._keys) == set(self._values.keys())
             return result
         else:
             raise KeyError(name)
@@ -231,6 +233,8 @@ class AttrDict(object):
             return attr
         elif self._default:
             result = self._values[name] = self._default()
+            self._keys.append(name)
+            assert set(self._keys) == set(self._values.keys())
             return result
         else:
             raise AttributeError(name)
