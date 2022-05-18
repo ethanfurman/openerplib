@@ -280,19 +280,6 @@ class AttrDict(object):
             return "%s()" % cls_name
         return "%s(%s)" % (cls_name, ', '.join(["%s=%r" % (k, self._values[k]) for k in self.keys()]))
 
-    def __str__(self):
-        lines = ['{']
-        for k, v in self.items():
-            if isinstance(v, self.__class__):
-                lines.append(' %s = {' % k)
-                for line in str(v).split('\n')[1:-1]:
-                    lines.append('     %s' % line)
-                lines.append('      }')
-            else:
-                lines.append(' %r:  %r' % (k, v))
-        lines.append(' }')
-        return '\n'.join(lines)
-
     def clear(self):
         self._values.clear()
         self._keys[:] = []
