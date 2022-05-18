@@ -849,8 +849,8 @@ def pfm(values):
         raise ValueError('not sure how to convert %r' % (values, ))
 
 def _convert(value):
-    if not value and (isinstance(value, (str, bool)) or isinstance(value, number)):
-        return False
+    if not value and isinstance(value, (str, number, bool)):
+        return value
     elif isinstance(value, (date, Date)):
         return value.strftime(DEFAULT_SERVER_DATE_FORMAT)
     elif isinstance(value, (datetime, DateTime)):
