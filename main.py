@@ -352,15 +352,12 @@ class Model(object):
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'object'), model_name or "")
         for key, value in self.model_info().items():
             setattr(self, key, value)
-        # self._columns = self.own_fields_get()
         self._all_columns = self.fields_get()
         id = AttrDict(
                 type='integer',
                 string='ID',
                 readonly=True,
                 )
-        # if 'id' not in self._columns:
-        #     self._columns.id = id
         if 'id' not in self._all_columns:
             self._all_columns['id'] = id
         for f, d in self._all_columns.items():
