@@ -404,7 +404,7 @@ class Model(object):
                 self._selection_fields.add(f)
                 size = 1
                 for db, ud in d['selection']:
-                    db = db and str(db) or ''
+                    db = db and str(db) or u''
                     size = max(size, len(db))
                 if size < 129:
                     dft = 'C(%d)' % size
@@ -653,6 +653,12 @@ class Model(object):
                                     r[f] = None
                                 else:
                                     r[f] = enum(r[f])
+                        elif f in self._selection_fields:
+                            for r in result:
+                                if not r[f]:
+                                    r[f] = None
+                                else:
+                                    r[f] = str(r[f])
                         elif f in self._x2one_fields:
                             link_table_name = self._all_columns[f]['relation']
                             for r in result:
@@ -943,7 +949,7 @@ class SelectionEnum(str, Enum):
         count = len(cls.__members__)
         obj = str.__new__(cls, args[0])
         obj._count = count
-        obj._value_ = args
+        obj._value_ = tuple(str(a) for a in args)
         return obj
 
     @classmethod
