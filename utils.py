@@ -29,9 +29,14 @@
 import os as _os
 import sys as _sys
 import aenum as _aenum
+import codecs
+import re
+from . import dates
+from datetime import date, datetime, time
+from dbf import Date, DateTime, Time
 from collections import defaultdict, OrderedDict
 from pprint import pformat
-from scription import integer as baseinteger, basestring, str
+from scription import integer as baseinteger, basestring, str, echo
 from warnings import warn
 
 py_ver = _sys.version_info[:2]
@@ -361,6 +366,8 @@ class XidRec(AttrDict):
     def __init__(self, fields, imd, *args, **kwds):
         if imd is None:
             imd = AttrDict(name=None, module=None, model=None, res_id=None, id=0)
+        elif isinstance(imd, dict):
+            imd = AttrDict().update(**imd)
         elif not isinstance(imd, AttrDict):
             raise TypeError('imd should be an AttrDict(), not %r' % (type(AttrDict), ))
         self._types = {}
@@ -410,8 +417,6 @@ class XidRec(AttrDict):
     def fromdict(cls, data, imd, types=None):
         if imd is None:
             imd = AttrDict(name=None, module=None, model=None, res_id=None, id=0)
-        elif not isinstance(imd, AttrDict):
-            raise TypeError('imd should be an AttrDict(), not %r' % (type(AttrDict), ))
         if types is None:
             types = {}
         # sanity check on data
@@ -514,8 +519,29 @@ def get_records(
             raise ValueError('no more than %s records expected for %r, but received %s'
                     % (max_qty, ids or domain, len(result)))
         if type is XidRec:
+            ir_model_data = connection.get_model('ir.model.data')
             for i, rec in enumerate(result):
-                result[i] = XidRec.fromdict(rec, imd=None)
+                imd_records = ir_model_data.search_read([
+                        ('model','=',model.model_name),
+                        ('res_id','=',rec.id)],
+                        )
+                if not imd_records:
+                    imd = None
+                elif len(imd_records) == 1:
+                    [imd] = imd_records
+                    if imd.module != 'whc':
+                        print("record %r has ir.model.data module of %s.%s" % (
+                                rec.xml_id, imd.module, imd.name)
+                                )
+                else:
+                    for imd_rec in imd_records:
+                        if imd_rec.module == 'whc':
+                            imd = imd_rec
+                    else:
+                        print("record %r has ir.model.data records:\n%s" % '\n'.join(
+                                ['%s.%s' % (r.module, r.name) for r in imd_records]
+                                ))
+                result[i] = XidRec.fromdict(rec, imd=imd)
         if single:
             result = result[0]
     return result
@@ -543,7 +569,6 @@ class Query(object):
         if _parent is None:
             parent_field, parent_display = '', ''
         else:
-            # _parent = (field_name, 'Display Name')
             parent_field = '%s/' % _parent[0]
             parent_display = '%s -> ' % _parent[1]
         self.names = {}.fromkeys([parent_field+n for n in fields])
@@ -643,9 +668,6 @@ class Query(object):
                         d.update(sub_query.id_map[id])
                         new_data.append(d)
                     rec[field] = new_data
-                            # sub_query.id_map[id]
-                            # for id in rec[field]
-                            # ]
         if unique:
             seen = set()
             unique_records = []
@@ -1051,8 +1073,6 @@ def chunk(stream, size):
         yield chunk
 
 def distinct(attr_rec):
-    # new_rec = attr_rec.copy()
-    # new_rec.pop('id')
     for k, v in attr_rec.items():
         if isinstance(v, AttrDict):
             attr_rec[k] = distinct(v)
@@ -1127,7 +1147,7 @@ class Phone(object):
         if data[:2] == '00':
             data = '011' + data[2:]
         # fix leading '+' signs
-        if data[0] == '+':
+        if data[:1] == '+':
             data = '011' + data[1:].replace('+', '')
         if 'x' in data:
             if ext:
@@ -1231,3 +1251,198 @@ class Phone(object):
         self._ext = val and 'x' + str(val) or ''
         self._number = ('%s %s' % (self._base, self._ext)).strip()
 
+class CSV(object):
+    """
+    represents a .csv file
+    """
+
+    def __init__(self, filename, mode='r'):
+        if mode not in ('r','w'):
+            raise ValueError("mode must be 'r' or 'w', not %r" % (mode, ))
+        self.filename = filename
+        self.mode = mode
+        if mode == 'r':
+            with codecs.open(filename, mode=mode, encoding='utf-8') as csv:
+                raw_data = csv.read().split('\n')
+            self.header = raw_data.pop(0).strip().split(',')
+            self.data = [l.strip() for l in raw_data if l.strip()]
+        else:
+            self.header = []
+            self.data = []
+
+    def __enter__(self):
+        if self.mode == 'r':
+            raise TypeError("CSV must be opened for writing to be used as a context manager")
+        return self
+
+    def __exit__(self, *args):
+        if args == (None, None, None):
+            self.save()
+
+    def __iter__(self):
+        """
+        returns data rows (not header)
+        """
+        for line in self.data:
+            yield self.from_csv(line)
+
+    def __len__(self):
+        return len(self.data)
+
+    def append(self, *values):
+        if isinstance(values[0], list):
+            values = tuple(values[0])
+        if len(values) != len(self.header):
+            raise ValueError('%d fields required, %d value(s) given' % (len(self.header), len(values)))
+        line = self.to_csv(*values)
+        new_values = self.from_csv(line)
+        if len(values) != len(new_values):
+            echo(len(values), len(new_values))
+            echo(values)
+            echo(line)
+            echo(new_values)
+            raise ValueError
+        self.data.append(line)
+
+    def from_csv(self, line):
+        """
+        returns a tuple of converted data from `line`
+
+        supported types:
+
+        date        : nnnn-nn-nn
+        datetime    : nnnn-nn-nn nn:nn:nn
+        time        : nn:nn:nn
+        int         : non-quoted number with no fractions
+        float       : non-quoted number with fraction
+        bool        : true, yes, on, t / false, no, off, f
+        unicode     : "anything else"
+        """
+        # break line into fields
+        fields = []
+        word = []
+        encap = False
+        parens = 0
+        skip_next = False
+        for i, ch in enumerate(line):
+            if skip_next:
+                skip_next = False
+                continue
+            if encap:
+                if ch == '"' and line[i+1:i+2] == '"':
+                    word.append(ch)
+                    skip_next = True
+                elif ch =='"' and line[i+1:i+2] in ('', ','):
+                    word.append(ch)
+                    encap = False
+                elif ch == '"':
+                    raise ValueError(
+                            'invalid char following ": <%s> (should be comma or double-quote)\n%r\n%s^'
+                            % (ch, line, ' ' * i)
+                            )
+                else:
+                    word.append(ch)
+            elif ch == '(':
+                word.append(ch)
+                parens += 1
+            elif ch == ')':
+                word.append(ch)
+                parens -= 1
+                if parens < 0:
+                    raise ValueError('unbalanced parentheses in:\n%r' % line)
+            else:
+                if ch == ',' and not parens:
+                    fields.append(''.join(word))
+                    word = []
+                elif ch == '"':
+                    if word: # embedded " are not allowed
+                        raise ValueError('embedded quotes not allowed:\n%s\n%s' % (line[:i], line))
+                    encap = True
+                    word.append(ch)
+                else:
+                    word.append(ch)
+        if parens:
+            raise ValueError('unbalanced parentheses in:\n%r' % line)
+        # don't lose last field!
+        fields.append(''.join(word))
+        #
+        # convert fields to their data types
+        final = []
+        for i, field in enumerate(fields):
+            if not field:
+                final.append(None)
+            elif field[0] == field[-1] == '"':
+                # simple string
+                final.append(field[1:-1])
+            elif field.lower() in ('true','yes','on','t'):
+                final.append(True)
+            elif field.lower() in ('false','no','off','f'):
+                final.append(False)
+            elif '-' in field and ':' in field:
+                final.append(dates.str_to_datetime(field, localtime=False))
+            elif '-' in field:
+                final.append(Date.strptime(field, '%Y-%m-%d'))
+            elif ':' in field:
+                final.append(Time.strptime(field, '%H:%M:%S'))
+            elif 'Many2One' in field:
+                final.append(eval(field))
+            elif 'Phone' in field:
+                final.append(eval(field))
+            else:
+                try:
+                    final.append(int(field))
+                except ValueError:
+                    try:
+                        final.append(float(field))
+                    except:
+                        raise ValueError('unable to determine datatype of <%r>' % (field, ))
+        return final
+
+    def iter_map(self):
+        for record in self:
+            yield AttrDict(zip(self.header, record))
+
+    def save(self, filename=None):
+        if filename is None:
+            filename = self.filename
+        # check that we have a header
+        if not self.header:
+            raise ValueError('missing header')
+        # write the header
+        with codecs.open(filename, mode=self.mode, encoding='utf-8') as csv:
+            csv.write(','.join(self.header) + '\n')
+            # write the data
+            for line in self.data:
+                csv.write(line + '\n')
+
+    def to_csv(self, *data):
+        """
+        convert data to text and add to CSV.data
+
+        supported types:
+
+        unicode       : "str and unicode"
+        date          : nnnn-nn-nn
+        datetime      : nnnn-nn-nn nn:nn:nn
+        time          : nn:nn:nn
+        bool          : true, yes, on, t / false, no, off, f
+        anything else : repr()
+        """
+        line = []
+        for datum in data:
+            if datum is None or datum == '':
+                line.append('')
+            elif isinstance(datum, unicode):
+                datum = datum.replace('"','""')
+                line.append('"%s"' % datum)
+            elif isinstance(datum, dates.dates):
+                line.append(datum.strftime('%Y-%m-%d'))
+            elif isinstance(datum, dates.datetimes):
+                line.append(dates.datetime_to_str(datum))
+            elif isinstance(datum, dates.times):
+                line.append(datum.strftime('%H:%M:%S'))
+            elif isinstance(datum, bool):
+                line.append('ft'[datum])
+            else:
+                line.append(repr(datum))
+        return ','.join(line)
