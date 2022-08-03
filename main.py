@@ -318,6 +318,9 @@ class AuthenticationError(Exception):
 class MissingTable(Exception):
     "table not found in OpenERP"
 
+class ValidateError(Exception):
+    "failed constraint or missing selection"
+
 class Model(object):
     """
     Useful class to dialog with one of the models provided by an OpenERP server.
