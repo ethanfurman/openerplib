@@ -30,10 +30,8 @@ import os as _os
 import sys as _sys
 import aenum as _aenum
 import codecs
-import re
 from . import dates
-from datetime import date, datetime, time
-from dbf import Date, DateTime, Time
+from dbf import Date, Time
 from collections import defaultdict, OrderedDict
 from pprint import pformat
 from scription import integer as baseinteger, basestring, str, echo
@@ -748,7 +746,7 @@ class QueryDomain(object):
         cache_key = self._cache_key = self.model.model_name, tuple(self.fields), tuple(self.ids)
         if self._cache.get(cache_key) is None:
             records = self.model.read(self.ids, fields=self.fields)
-            id_map = dict([
+            id_map = OrderedDict([
                 (r.id, r)
                 for r in records
                 if all (c(r) for c in self.constraints)
