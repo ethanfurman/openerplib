@@ -45,15 +45,21 @@ try:
 except ImportError:
     from urllib.request import Request, urlopen
 
+try:
+    import __builtin__ as builtins
+except ImportError:
+    import builtins
+
 import logging
 import random
+import re
 from aenum import Enum, NamedTuple
 from base64 import b64decode
 from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
 from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone, Binary
-from scription import bytes, integer as baseinteger, basestring, number, str
+from scription import bytes, integer as baseinteger, basestring, number, str, Var
 from VSS.address import PostalCode
 
 try:
@@ -66,6 +72,9 @@ DEFAULT_SERVER_TIME_FORMAT = "%H:%M:%S"
 DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
+
+known_exc = Var(lambda hay: re.search(r"\\n(ValueError|KeyError): *(.*)\\n'>", hay))
+constraint_err = Var(lambda hay: re.search("Constraint Error\n\n(.*)>", hay))
 
 _logger = logging.getLogger(__name__)
 
@@ -106,7 +115,25 @@ class XmlRPCConnector(Connector):
     def send(self, service_name, method, *args):
         url = '%s/%s' % (self.url, service_name)
         service = ServerProxy(url)
-        return getattr(service, method)(*args)
+        try:
+            return getattr(service, method)(*args)
+        except Fault as exc1:
+            exc = str(exc1)
+            if constraint_err(exc):
+                msg, = constraint_err.groups()
+                if msg.endswith(": ''"):
+                    msg = msg[:-4]
+                raise ValueError(msg)
+            if known_exc(exc):
+                error, msg = known_exc.groups()
+                try:
+                    exc2 = getattr(builtins, error)
+                except:
+                    raise exc1
+                else:
+                    raise exc2(msg)
+            raise
+
 
 class XmlRPCSConnector(XmlRPCConnector):
     """
