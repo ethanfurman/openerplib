@@ -848,6 +848,9 @@ class Many2One(IDEquality, _aenum.NamedTuple):
         else:
             return target.name
 
+    def get_record(self, connection, fields=[]):
+        return get_records(connection, model=self.model, ids=self.id, fields=fields)
+
 
 class Binary(object):
     """
