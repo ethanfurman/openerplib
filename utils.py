@@ -878,7 +878,7 @@ class Binary(object):
         if isinstance(value, (dict, list, tuple)):
             return pformat(value)
         elif isinstance(value, bytes):
-            return 'b%r' % (value[:10] + '...' + value[-7:])
+            return 'b%r' % value
         else:
             return repr(value.__class__.__name__)
     #
