@@ -31,10 +31,11 @@ import sys as _sys
 import aenum as _aenum
 import codecs
 from . import dates
+from base64 import b64decode
 from dbf import Date, Time
 from collections import defaultdict, OrderedDict
 from pprint import pformat
-from scription import integer as baseinteger, basestring, str, echo
+from scription import integer as baseinteger, basestring, str, echo, unicode
 from warnings import warn
 
 py_ver = _sys.version_info[:2]
@@ -859,6 +860,8 @@ class Binary(object):
     common values are images, dicts, and lists
     """
     def __init__(self, value):
+        if isinstance(value, unicode):
+            value = value.encode('latin1')
         self.value = value
     #
     def __repr__(self):
@@ -867,9 +870,9 @@ class Binary(object):
             return 'Binary(%r)' % (value, )
         elif isinstance(value, bytes):
             if len(value) < 21:
-                return 'Binary(b%r)' % (value, )
+                return 'Binary(%r)' % (value, )
             else:
-                return 'Binary(b%r)' % (value[:10] + '...' + value[-7:])
+                return 'Binary(%r)' % (value[:10] + b'...' + value[-7:])
         else:
             return 'Binary(%r)' % (value.__class__.__name__, )
     #
@@ -878,12 +881,22 @@ class Binary(object):
         if isinstance(value, (dict, list, tuple)):
             return pformat(value)
         elif isinstance(value, bytes):
-            return 'b%r' % (value[:10] + '...' + value[-7:])
+            return '%r' % (value[:10] + b'...' + value[-7:])
         else:
             return repr(value.__class__.__name__)
     #
     def __getattr__(self, name):
         return getattr(self.value, name)
+    #
+    def to_base64(self):
+        from base64 import b64encode
+        return b64encode(self.value)
+    #
+    @classmethod
+    def from_base64(cls, value):
+        if isinstance(value, unicode):
+            value = value.encode('ascii')
+        return cls(b64decode(value))
 
 
 class EmbeddedNewlineError(ValueError):
@@ -1325,17 +1338,24 @@ class CSV(object):
         encap = False
         parens = 0
         skip_next = False
+        keep_next = False
         for i, ch in enumerate(line):
             if skip_next:
                 skip_next = False
                 continue
-            if encap:
+            elif keep_next:
+                keep_next = False
+                word.append(ch)
+                continue
+            elif encap:
                 if ch == '"' and line[i+1:i+2] == '"':
                     word.append(ch)
                     skip_next = True
                 elif ch =='"' and line[i+1:i+2] in ('', ','):
                     word.append(ch)
                     encap = False
+                elif ch == '\\':
+                    keep_next = True
                 elif ch == '"':
                     raise ValueError(
                             'invalid char following ": <%s> (should be comma or double-quote)\n%r\n%s^'
@@ -1374,7 +1394,7 @@ class CSV(object):
                 final.append(None)
             elif field[0] == field[-1] == '"':
                 # simple string
-                final.append(field[1:-1])
+                final.append(field[1:-1].replace('\\n','\n'))
             elif field.lower() in ('true','yes','on','t'):
                 final.append(True)
             elif field.lower() in ('false','no','off','f'):
@@ -1396,7 +1416,9 @@ class CSV(object):
                     try:
                         final.append(float(field))
                     except:
-                        raise ValueError('unable to determine datatype of <%r>' % (field, ))
+                        ve = ValueError('unable to determine datatype of <%r>' % (field, ))
+                        ve.__cause__ = None
+                        raise ve
         return final
 
     def iter_map(self):
