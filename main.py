@@ -73,8 +73,8 @@ DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
 
-known_exc = Var(lambda hay: re.search(r"\\n(ValueError|KeyError): *(.*)\\n'>", hay))
-constraint_err = Var(lambda hay: re.search("Constraint Error\n\n(.*)>", hay))
+python_exc = Var(lambda hay: re.search(r"\\n(ValueError|KeyError): *(.*)\\n'>", hay))
+oe_exc = Var(lambda hay: re.search(r"(AccessDenied|AccessError|MissingError|ValidationError|ConstraintError): (.*)\\n'>", hay))
 
 _logger = logging.getLogger(__name__)
 
@@ -119,13 +119,18 @@ class XmlRPCConnector(Connector):
             return getattr(service, method)(*args)
         except Fault as exc1:
             exc = str(exc1)
-            if constraint_err(exc):
-                msg, = constraint_err.groups()
+            if oe_exc(exc):
+                error, msg = oe_exc.groups()
                 if msg.endswith(": ''"):
                     msg = msg[:-4]
-                raise ValueError(msg)
-            if known_exc(exc):
-                error, msg = known_exc.groups()
+                try:
+                    exc2 = '%s%s' % (error, msg)
+                    exc2 = eval(exc2)
+                    raise exc2 from None
+                except KeyError:
+                    raise exc1
+            if python_exc(exc):
+                error, msg = python_exc.groups()
                 try:
                     exc2 = getattr(builtins, error)
                 except:
@@ -363,7 +368,7 @@ class Model(object):
         """
         self._text_fields = set()
         self._html_fields = set()
-	self._raw_html_fields = set()
+        self._raw_html_fields = set()
         self._binary_fields = set()
         self._x2one_fields = set()
         self._x2many_fields = set()
@@ -599,7 +604,7 @@ class Model(object):
                     ids = args[0]
                 else:
                     ids = kwds['ids']
-                if isinstance(ids, (int, long)):
+                if isinstance(ids, baseinteger):
                     ids = [ids]
                 target_imd_ids = [
                         r.id
@@ -1059,3 +1064,33 @@ class SelectionEnum(str, Enum):
                 return default
         raise LookupError('%r not found in %s' % (text, cls.__name__))
 
+# exceptions
+
+class ErpError(Exception):
+    def __init__(self, msg='', value=None):
+        self.msg = msg
+        self.value = value
+        if self.value is None:
+            self.args = (msg, )
+        else:
+            self.args = msg, value
+    def __repr__(self):
+        if self.value is None:
+            return "%s(%r)" % (self.__class__.__name__, self.msg)
+        else:
+            return "%s(%r, value=%r)" % (self.__class__.__name__, self.msg, self.value)
+
+class AccessDenied(ErpError):
+    pass
+
+class AccessError(ErpError):
+    pass
+
+class MissingError(ErpError):
+    pass
+
+class ValidationError(ErpError):
+    pass
+
+class ConstraintError(ErpError):
+    pass
