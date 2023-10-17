@@ -59,7 +59,7 @@ from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
 from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone, Binary
-from scription import bytes, integer as baseinteger, basestring, number, str, Var
+from scription import bytes, integer as baseinteger, basestring, number, str, Var, raise_with_traceback
 from VSS.address import PostalCode
 
 try:
@@ -126,17 +126,16 @@ class XmlRPCConnector(Connector):
                 try:
                     exc2 = '%s%s' % (error, msg)
                     exc2 = eval(exc2)
-                    raise exc2 from None
+                    raise_with_traceback(exc2, None)
                 except KeyError:
                     raise exc1
             if python_exc(exc):
                 error, msg = python_exc.groups()
                 try:
                     exc2 = getattr(builtins, error)
+                    raise_with_traceback(exc2(msg), None)
                 except:
                     raise exc1
-                else:
-                    raise exc2(msg)
             raise
 
 
