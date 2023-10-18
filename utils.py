@@ -38,6 +38,12 @@ from pprint import pformat
 from scription import integer as baseinteger, basestring, str, echo, unicode
 from warnings import warn
 
+try:
+    import enum
+    enums = _aenum.Enum, enum.Enum
+except ImportError:
+    enums = _aenum.Enum,
+
 py_ver = _sys.version_info[:2]
 
 ALL_RECORDS = [(1,'=',1)]
@@ -1355,7 +1361,11 @@ class CSV(object):
                     word.append(ch)
                     encap = False
                 elif ch == '\\':
-                    keep_next = True
+                    if line[i+1:i+2] == 'n':
+                        word.append('\n')
+                        skip_next = True
+                    else:
+                        keep_next = True
                 elif ch == '"':
                     raise ValueError(
                             'invalid char following ": <%s> (should be comma or double-quote)\n%r\n%s^'
@@ -1394,7 +1404,7 @@ class CSV(object):
                 final.append(None)
             elif field[0] == field[-1] == '"':
                 # simple string
-                final.append(field[1:-1].replace('\\n','\n'))
+                final.append(field[1:-1].replace('\\n','\n').replace('\\\\','\\'))
             elif field.lower() in ('true','yes','on','t'):
                 final.append(True)
             elif field.lower() in ('false','no','off','f'):
@@ -1456,7 +1466,7 @@ class CSV(object):
             if datum is None or datum == '':
                 line.append('')
             elif isinstance(datum, unicode):
-                datum = datum.replace('"','""')
+                datum = datum.replace('"','""').replace('\\','\\\\').replace('\n',r'\n')
                 line.append('"%s"' % datum)
             elif isinstance(datum, dates.dates):
                 line.append(datum.strftime('%Y-%m-%d'))
@@ -1466,6 +1476,101 @@ class CSV(object):
                 line.append(datum.strftime('%H:%M:%S'))
             elif isinstance(datum, bool):
                 line.append('ft'[datum])
+            elif isinstance(datum, SelectionEnum):
+                line.append(repr(datum.db))
+            elif isinstance(datum, enums):
+                line.append(repr(datum.value))
             else:
                 line.append(repr(datum))
         return ','.join(line)
+
+
+_raise_lookup = Sentinel('raise LookupError')
+
+class SelectionEnum(str, _aenum.Enum):
+    _init_ = 'db user'
+
+    def __new__(cls, *args, **kwds):
+        count = len(cls.__members__)
+        obj = str.__new__(cls, args[0])
+        obj._count = count
+        obj._value_ = tuple(str(a) for a in args)
+        return obj
+
+    @classmethod
+    def __init_subclass__(cls):
+        "make SelectionEnum class marshallable as string"
+        try:
+            from xmlrpclib import Marshaller
+        except ImportError:
+            from xmlrpc.client import Marshaller
+        Marshaller.dispatch[cls] = Marshaller.dump_unicode
+
+    def __str__(self):
+        return str(self.db)
+
+    def __repr__(self):
+        return '%s.%s' % (self.__class__.__name__, self._name_)
+
+    def __ge__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count >= other._count
+        else:
+            return NotImplemented
+
+    def __gt__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count > other._count
+        else:
+            return NotImplemented
+
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count <= other._count
+        else:
+            return NotImplemented
+
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count < other._count
+        else:
+            return NotImplemented
+
+    def __getitem__(self, index):
+        return list(self)[index]
+
+    def __iter__(self):
+        "return db value, user value"
+        return iter(self.value)
+
+    def __nonzero__(self):
+        return bool(self.db)
+
+    @staticmethod
+    def _generate_next_value_(name, start, count, values, *args, **kwds):
+        return (name, ) + args
+
+    @classmethod
+    def _missing_name_(cls, index):
+        "supports list-type indexing"
+        return list(cls)[index]
+
+    @classmethod
+    def _missing_value_(cls, value):
+        "support look-up by db name"
+        for member in cls:
+            if member.db == value:
+                return member
+
+    @classmethod
+    def get_member(cls, text, default=_raise_lookup):
+        for member in cls:
+            if member.db == text:
+                return member
+            elif default == _raise_lookup and member.db == default:
+                default = member
+        else:
+            if default is not _raise_lookup:
+                return default
+        raise LookupError('%r not found in %s' % (text, cls.__name__))
+
