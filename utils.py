@@ -1310,16 +1310,16 @@ class CSV(object):
         return len(self.data)
 
     def append(self, *values):
-        if isinstance(values[0], list):
+        if isinstance(values[0], (list, tuple)):
             values = tuple(values[0])
         if len(values) != len(self.header):
             raise ValueError('%d fields required, %d value(s) given' % (len(self.header), len(values)))
         line = self.to_csv(*values)
         new_values = self.from_csv(line)
-        if len(values) != len(new_values):
+        if values != new_values:
             echo(len(values), len(new_values))
-            echo(values)
             echo(line)
+            echo(values)
             echo(new_values)
             raise ValueError
         self.data.append(line)
@@ -1404,7 +1404,7 @@ class CSV(object):
                 final.append(None)
             elif field[0] == field[-1] == '"':
                 # simple string
-                final.append(field[1:-1].replace('\\n','\n').replace('\\\\','\\'))
+                final.append(field[1:-1])
             elif field.lower() in ('true','yes','on','t'):
                 final.append(True)
             elif field.lower() in ('false','no','off','f'):
@@ -1429,7 +1429,7 @@ class CSV(object):
                         ve = ValueError('unable to determine datatype of <%r>' % (field, ))
                         ve.__cause__ = None
                         raise ve
-        return final
+        return tuple(final)
 
     def iter_map(self):
         for record in self:
