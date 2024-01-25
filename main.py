@@ -58,8 +58,8 @@ from base64 import b64decode
 from .dates import local_to_utc, UTC
 from datetime import date, datetime
 from dbf import Date, DateTime
-from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone, Binary
-from scription import bytes, integer as baseinteger, basestring, number, str, Var
+from .utils import AttrDict, IDEquality, Many2One, XidRec, Phone, Binary, SelectionEnum
+from scription import bytes, integer as baseinteger, basestring, number, str, Var, raise_exc
 from VSS.address import PostalCode
 
 try:
@@ -73,8 +73,8 @@ DEFAULT_SERVER_DATETIME_FORMAT = "%s %s" % (
     DEFAULT_SERVER_DATE_FORMAT,
     DEFAULT_SERVER_TIME_FORMAT)
 
-known_exc = Var(lambda hay: re.search(r"\\n(ValueError|KeyError): *(.*)\\n'>", hay))
-constraint_err = Var(lambda hay: re.search("Constraint Error\n\n(.*)>", hay))
+python_exc = Var(lambda hay: re.search(r"\\n(ValueError|KeyError): *(.*)\\n'>", hay))
+oe_exc = Var(lambda hay: re.search(r"(AccessDenied|AccessError|MissingError|ValidationError|ConstraintError): (.*)\\n'>", hay))
 
 _logger = logging.getLogger(__name__)
 
@@ -119,19 +119,27 @@ class XmlRPCConnector(Connector):
             return getattr(service, method)(*args)
         except Fault as exc1:
             exc = str(exc1)
-            if constraint_err(exc):
-                msg, = constraint_err.groups()
+            if oe_exc(exc):
+                error, msg = oe_exc.groups()
                 if msg.endswith(": ''"):
                     msg = msg[:-4]
-                raise ValueError(msg)
-            if known_exc(exc):
-                error, msg = known_exc.groups()
+                try:
+                    exc2 = '%s%s' % (error, msg)
+                    exc2 = eval(exc2.replace('\\',''))
+                    raise_exc(exc2, cause=None)
+                except KeyError:
+                    raise exc1
+            if python_exc(exc):
+                error, msg = python_exc.groups()
                 try:
                     exc2 = getattr(builtins, error)
                 except:
                     raise exc1
                 else:
-                    raise exc2(msg)
+                    # exc2 = exc2(msg)
+                    # exc2.__cause__ = None
+                    # raise exc2
+                    raise_exc(exc2(msg), cause=None)
             raise
 
 
@@ -363,7 +371,7 @@ class Model(object):
         """
         self._text_fields = set()
         self._html_fields = set()
-	self._raw_html_fields = set()
+        self._raw_html_fields = set()
         self._binary_fields = set()
         self._x2one_fields = set()
         self._x2many_fields = set()
@@ -372,7 +380,7 @@ class Model(object):
         self._boolean_fields = set()
         self._integer_fields = set()
         self._float_fields = set()
-        self._selection_fields = set()
+        self._selection_fields = {}
         self._enum_fields = {}
         self._as_dbf = {}
         if self.ir_model_data is None and model_name != 'ir.model.data':
@@ -434,11 +442,13 @@ class Model(object):
                 digits = tuple(digits) if digits else (17, 3)
                 dft = 'N(%d, %d)' % digits
             elif fld_type in ('selection', ):
-                self._selection_fields.add(f)
                 size = 1
+                items = {}
                 for db, ud in d['selection']:
                     db = db and str(db) or u''
                     size = max(size, len(db))
+                    items[ud] = db
+                self._selection_fields[f] = items
                 if size < 129:
                     dft = 'C(%d)' % size
                 else:
@@ -522,7 +532,6 @@ class Model(object):
                             args[2]['active_test'] = False
                     except Exception:
                         pass
-
             #
             elif method == 'search':
                 # 'domain' keyword is actualy 'args' (stupid), so switch 'domain' to 'args'
@@ -599,7 +608,7 @@ class Model(object):
                     ids = args[0]
                 else:
                     ids = kwds['ids']
-                if isinstance(ids, (int, long)):
+                if isinstance(ids, baseinteger):
                     ids = [ids]
                 target_imd_ids = [
                         r.id
@@ -960,102 +969,34 @@ class OpenERP(object):
 
 DbfNameSpec = NamedTuple('DbfNameSpec', ['name', 'spec'])
 
-class Sentinel(object):
-    "provides better help for sentinels"
 
-    def __init__(self, text):
-        self.text = text
+# exceptions
 
+class ErpError(Exception):
+    def __init__(self, msg='', value=None):
+        self.msg = msg
+        self.value = value
+        if self.value is None:
+            self.args = (msg, )
+        else:
+            self.args = msg, value
     def __repr__(self):
-        return "<%s: %s>" % (self.__class__.__name__, self.text)
-
-    def __str__(self):
-        return '<%s>' % self.text
-
-
-_raise_lookup = Sentinel('raise LookupError')
-
-class SelectionEnum(str, Enum):
-    _init_ = 'db user'
-
-    def __new__(cls, *args, **kwds):
-        count = len(cls.__members__)
-        obj = str.__new__(cls, args[0])
-        obj._count = count
-        obj._value_ = tuple(str(a) for a in args)
-        return obj
-
-    @classmethod
-    def __init_subclass__(cls):
-        "make SelectionEnum class marshallable as string"
-        from xmlrpclib import Marshaller
-        Marshaller.dispatch[cls] = Marshaller.dump_unicode
-
-    def __str__(self):
-        return str(self.db)
-
-    def __repr__(self):
-        return '%s.%s' % (self.__class__.__name__, self._name_)
-
-    def __ge__(self, other):
-        if self.__class__ is other.__class__:
-            return self._count >= other._count
+        if self.value is None:
+            return "%s(%r)" % (self.__class__.__name__, self.msg)
         else:
-            return NotImplemented
+            return "%s(%r, value=%r)" % (self.__class__.__name__, self.msg, self.value)
 
-    def __gt__(self, other):
-        if self.__class__ is other.__class__:
-            return self._count > other._count
-        else:
-            return NotImplemented
+class AccessDenied(ErpError):
+    pass
 
-    def __le__(self, other):
-        if self.__class__ is other.__class__:
-            return self._count <= other._count
-        else:
-            return NotImplemented
+class AccessError(ErpError):
+    pass
 
-    def __lt__(self, other):
-        if self.__class__ is other.__class__:
-            return self._count < other._count
-        else:
-            return NotImplemented
+class MissingError(ErpError):
+    pass
 
-    def __getitem__(self, index):
-        return list(self)[index]
+class ValidationError(ErpError):
+    pass
 
-    def __iter__(self):
-        "return db value, user value"
-        return iter(self.value)
-
-    def __nonzero__(self):
-        return bool(self.db)
-
-    @staticmethod
-    def _generate_next_value_(name, start, count, values, *args, **kwds):
-        return (name, ) + args
-
-    @classmethod
-    def _missing_name_(cls, index):
-        "supports list-type indexing"
-        return list(cls)[index]
-
-    @classmethod
-    def _missing_value_(cls, value):
-        "support look-up by db name"
-        for member in cls:
-            if member.db == value:
-                return member
-
-    @classmethod
-    def get_member(cls, text, default=_raise_lookup):
-        for member in cls:
-            if member.db == text:
-                return member
-            elif default == _raise_lookup and member.db == default:
-                default = member
-        else:
-            if default is not _raise_lookup:
-                return default
-        raise LookupError('%r not found in %s' % (text, cls.__name__))
-
+class ConstraintError(ErpError):
+    pass

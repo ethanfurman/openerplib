@@ -31,11 +31,18 @@ import sys as _sys
 import aenum as _aenum
 import codecs
 from . import dates
+from base64 import b64decode
 from dbf import Date, Time
 from collections import defaultdict, OrderedDict
 from pprint import pformat
-from scription import integer as baseinteger, basestring, str, echo
+from scription import integer as baseinteger, basestring, str, echo, unicode
 from warnings import warn
+
+try:
+    import enum
+    enums = _aenum.Enum, enum.Enum
+except ImportError:
+    enums = _aenum.Enum,
 
 py_ver = _sys.version_info[:2]
 
@@ -859,6 +866,8 @@ class Binary(object):
     common values are images, dicts, and lists
     """
     def __init__(self, value):
+        if isinstance(value, unicode):
+            value = value.encode('latin1')
         self.value = value
     #
     def __repr__(self):
@@ -867,9 +876,9 @@ class Binary(object):
             return 'Binary(%r)' % (value, )
         elif isinstance(value, bytes):
             if len(value) < 21:
-                return 'Binary(b%r)' % (value, )
+                return 'Binary(%r)' % (value, )
             else:
-                return 'Binary(b%r)' % (value[:10] + '...' + value[-7:])
+                return 'Binary(%r)' % (value[:10] + b'...' + value[-7:])
         else:
             return 'Binary(%r)' % (value.__class__.__name__, )
     #
@@ -878,12 +887,22 @@ class Binary(object):
         if isinstance(value, (dict, list, tuple)):
             return pformat(value)
         elif isinstance(value, bytes):
-            return 'b%r' % (value[:10] + '...' + value[-7:])
+            return '%r' % (value[:10] + b'...' + value[-7:])
         else:
             return repr(value.__class__.__name__)
     #
     def __getattr__(self, name):
         return getattr(self.value, name)
+    #
+    def to_base64(self):
+        from base64 import b64encode
+        return b64encode(self.value)
+    #
+    @classmethod
+    def from_base64(cls, value):
+        if isinstance(value, unicode):
+            value = value.encode('ascii')
+        return cls(b64decode(value))
 
 
 class EmbeddedNewlineError(ValueError):
@@ -1291,16 +1310,16 @@ class CSV(object):
         return len(self.data)
 
     def append(self, *values):
-        if isinstance(values[0], list):
+        if isinstance(values[0], (list, tuple)):
             values = tuple(values[0])
         if len(values) != len(self.header):
             raise ValueError('%d fields required, %d value(s) given' % (len(self.header), len(values)))
         line = self.to_csv(*values)
         new_values = self.from_csv(line)
-        if len(values) != len(new_values):
+        if values != new_values:
             echo(len(values), len(new_values))
-            echo(values)
             echo(line)
+            echo(values)
             echo(new_values)
             raise ValueError
         self.data.append(line)
@@ -1325,17 +1344,28 @@ class CSV(object):
         encap = False
         parens = 0
         skip_next = False
+        keep_next = False
         for i, ch in enumerate(line):
             if skip_next:
                 skip_next = False
                 continue
-            if encap:
+            elif keep_next:
+                keep_next = False
+                word.append(ch)
+                continue
+            elif encap:
                 if ch == '"' and line[i+1:i+2] == '"':
                     word.append(ch)
                     skip_next = True
                 elif ch =='"' and line[i+1:i+2] in ('', ','):
                     word.append(ch)
                     encap = False
+                elif ch == '\\':
+                    if line[i+1:i+2] == 'n':
+                        word.append('\n')
+                        skip_next = True
+                    else:
+                        keep_next = True
                 elif ch == '"':
                     raise ValueError(
                             'invalid char following ": <%s> (should be comma or double-quote)\n%r\n%s^'
@@ -1396,8 +1426,10 @@ class CSV(object):
                     try:
                         final.append(float(field))
                     except:
-                        raise ValueError('unable to determine datatype of <%r>' % (field, ))
-        return final
+                        ve = ValueError('unable to determine datatype of <%r>' % (field, ))
+                        ve.__cause__ = None
+                        raise ve
+        return tuple(final)
 
     def iter_map(self):
         for record in self:
@@ -1434,7 +1466,7 @@ class CSV(object):
             if datum is None or datum == '':
                 line.append('')
             elif isinstance(datum, unicode):
-                datum = datum.replace('"','""')
+                datum = datum.replace('"','""').replace('\\','\\\\').replace('\n',r'\n')
                 line.append('"%s"' % datum)
             elif isinstance(datum, dates.dates):
                 line.append(datum.strftime('%Y-%m-%d'))
@@ -1444,6 +1476,101 @@ class CSV(object):
                 line.append(datum.strftime('%H:%M:%S'))
             elif isinstance(datum, bool):
                 line.append('ft'[datum])
+            elif isinstance(datum, SelectionEnum):
+                line.append(repr(datum.db))
+            elif isinstance(datum, enums):
+                line.append(repr(datum.value))
             else:
                 line.append(repr(datum))
         return ','.join(line)
+
+
+_raise_lookup = Sentinel('raise LookupError')
+
+class SelectionEnum(str, _aenum.Enum):
+    _init_ = 'db user'
+
+    def __new__(cls, *args, **kwds):
+        count = len(cls.__members__)
+        obj = str.__new__(cls, args[0])
+        obj._count = count
+        obj._value_ = tuple(str(a) for a in args)
+        return obj
+
+    @classmethod
+    def __init_subclass__(cls):
+        "make SelectionEnum class marshallable as string"
+        try:
+            from xmlrpclib import Marshaller
+        except ImportError:
+            from xmlrpc.client import Marshaller
+        Marshaller.dispatch[cls] = Marshaller.dump_unicode
+
+    def __str__(self):
+        return str(self.db)
+
+    def __repr__(self):
+        return '%s.%s' % (self.__class__.__name__, self._name_)
+
+    def __ge__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count >= other._count
+        else:
+            return NotImplemented
+
+    def __gt__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count > other._count
+        else:
+            return NotImplemented
+
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count <= other._count
+        else:
+            return NotImplemented
+
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self._count < other._count
+        else:
+            return NotImplemented
+
+    def __getitem__(self, index):
+        return list(self)[index]
+
+    def __iter__(self):
+        "return db value, user value"
+        return iter(self.value)
+
+    def __nonzero__(self):
+        return bool(self.db)
+
+    @staticmethod
+    def _generate_next_value_(name, start, count, values, *args, **kwds):
+        return (name, ) + args
+
+    @classmethod
+    def _missing_name_(cls, index):
+        "supports list-type indexing"
+        return list(cls)[index]
+
+    @classmethod
+    def _missing_value_(cls, value):
+        "support look-up by db name"
+        for member in cls:
+            if member.db == value:
+                return member
+
+    @classmethod
+    def get_member(cls, text, default=_raise_lookup):
+        for member in cls:
+            if member.db == text:
+                return member
+            elif default == _raise_lookup and member.db == default:
+                default = member
+        else:
+            if default is not _raise_lookup:
+                return default
+        raise LookupError('%r not found in %s' % (text, cls.__name__))
+
