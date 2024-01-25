@@ -570,7 +570,7 @@ class Model(object):
             if method == "create":
                 if imd_info:
                     imd_info.res_id = result
-                    imd_info.pop('id')
+                    imd_info.pop('id', None)
                     try:
                         imd_info.id = self.ir_model_data.create(pfm(imd_info))
                     except Fault as exc:

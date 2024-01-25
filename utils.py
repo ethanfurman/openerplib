@@ -365,7 +365,7 @@ class XidRec(AttrDict):
         if imd is None:
             imd = AttrDict(name=None, module=None, model=None, res_id=None, id=0)
         elif isinstance(imd, dict):
-            imd = AttrDict().update(**imd)
+            imd = AttrDict(**imd)
         elif not isinstance(imd, AttrDict):
             raise TypeError('imd should be an AttrDict(), not %r' % (type(AttrDict), ))
         self._types = {}
