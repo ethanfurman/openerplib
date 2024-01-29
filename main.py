@@ -328,7 +328,7 @@ class Connection(object):
             model = Model(self, model_name, raw=self.raw)
         except Exception as exc:
             if "Object %s doesn't exist" % model_name in str(exc):
-                raise MissingTable("Model '%s' doesn't exist" % model_name.replace('.','_'))
+                raise MissingTable("Model '%s' doesn't exist" % model_name)
             raise
         if model._auto and not (model._transient or transient):
             model.search([('id','=',0)])
