@@ -474,14 +474,17 @@ class Model(object):
             """
             :param args: A list of values for the method
             """
+            self.__logger.debug(method)
+            self.__logger.debug('args: %r   kwds: %r', args, kwds)
             self.connection.check_login(False)
-            self.__logger.debug(args)
             #
             # pre-process
             #
             # method specific endeavors
             if method == 'create':
                 imd_info = kwds.pop('imd_info', None)
+                if imd_info and not isinstance(imd_info, AttrDict):
+                    imd_info = AttrDict(**imd_info)
                 # get the values, fields, and default values
                 new_values = kwds.pop('values', None) or args[0]
                 if imd_info is None and isinstance(new_values, XidRec):
@@ -491,22 +494,25 @@ class Model(object):
                 # take special care with x2many fields 'cause they come to us as a list of
                 # ids which we must transform into a list of delete and add commands such as
                 # [(3, id1), (4, id1), (3, id2), (4, id2), ...]
-                manies = [
-                        k for (k, v) in fields.items()
-                        if v['type'] in ('one2many', 'many2many')
-                           and k in default_values
-                           and k not in new_values
-                           and default_values[k]
-                        ]
-                for many in manies:
-                    new_many = []
-                    for id in default_values[many]:
-                        new_many.append((3, id))
-                        new_many.append((4, id))
-                    default_values[many] = new_many
-                # finally, update the defaults from the passed in values
+                for source in (default_values, new_values):
+                    manies = [
+                            k for (k, v) in fields.items()
+                            if v['type'] in ('one2many', 'many2many')
+                            and k in source
+                            ]
+                    for many in manies:
+                        new_many = []
+                        for id in source[many]:
+                            if isinstance(id, baseinteger):
+                                # new_many.append((3, id))
+                                new_many.append((4, id))
+                            else:
+                                new_many.append(id)
+                        source[many] = new_many
+                # update the defaults from the passed in values
                 default_values.update(new_values)
                 args = (default_values, ) + args[1:]
+                self.__logger.debug('args: %r   kwds: %r', args, kwds)
             #
             elif method == 'read':
                 # convert any kwds to args
@@ -547,6 +553,21 @@ class Model(object):
                 # ensure values are OpenERP appropriate
                 ids = kwds.pop('ids', None) or args[0]
                 values = kwds.pop('values', None) or args[1]
+                fields = self._all_columns
+                manies = [
+                        k for (k, v) in fields.items()
+                        if v['type'] in ('one2many', 'many2many')
+                        and k in values
+                        ]
+                for many in manies:
+                    new_many = []
+                    for id in values[many]:
+                        if isinstance(id, baseinteger):
+                            # new_many.append((3, id))
+                            new_many.append((4, id))
+                        else:
+                            new_many.append(id)
+                    values[many] = new_many
                 args = (ids, values) + args[2:]
             #
             # ensure everything is marshalable
@@ -573,6 +594,7 @@ class Model(object):
                                                     args,
                                                     kwds
                                                     )
+            self.__logger.debug('immediate result: %r', result)
             #
             # post-process
             #
@@ -597,7 +619,6 @@ class Model(object):
                                 # orphaned pointer, update it
                                 self.ir_model_data.write(pos_rec_ptr.id, pfm(imd_info))
                                 imd_info.id = pos_rec_ptr.id
-                                self.__logger.debug('result: %r', result)
                                 return result
                         # something went wrong, delete the newly created record
                         self.unlink(result)
@@ -757,7 +778,7 @@ class Model(object):
                 except Exception:
                     pass
             #
-            self.__logger.debug('result: %r', result)
+            self.__logger.debug('final result: %r', result)
             return result
         return proxy
 
