@@ -1276,7 +1276,7 @@ class CSV(object):
     represents a .csv file
     """
 
-    def __init__(self, filename, mode='r'):
+    def __init__(self, filename, mode='r', header=True):
         if mode not in ('r','w'):
             raise ValueError("mode must be 'r' or 'w', not %r" % (mode, ))
         self.filename = filename
@@ -1284,7 +1284,8 @@ class CSV(object):
         if mode == 'r':
             with codecs.open(filename, mode=mode, encoding='utf-8') as csv:
                 raw_data = csv.read().split('\n')
-            self.header = raw_data.pop(0).strip().split(',')
+            if header:
+                self.header = raw_data.pop(0).strip().split(',')
             self.data = [l.strip() for l in raw_data if l.strip()]
         else:
             self.header = []
@@ -1312,7 +1313,7 @@ class CSV(object):
     def append(self, *values):
         if isinstance(values[0], (list, tuple)):
             values = tuple(values[0])
-        if len(values) != len(self.header):
+        if header and len(values) != len(self.header):
             raise ValueError('%d fields required, %d value(s) given' % (len(self.header), len(values)))
         line = self.to_csv(*values)
         new_values = self.from_csv(line)
@@ -1432,18 +1433,18 @@ class CSV(object):
         return tuple(final)
 
     def iter_map(self):
+        if not self.header:
+            raise ValueError("cannot create map without header")
         for record in self:
             yield AttrDict(zip(self.header, record))
 
     def save(self, filename=None):
         if filename is None:
             filename = self.filename
-        # check that we have a header
-        if not self.header:
-            raise ValueError('missing header')
-        # write the header
         with codecs.open(filename, mode=self.mode, encoding='utf-8') as csv:
-            csv.write(','.join(self.header) + '\n')
+            # write the header (if it exists)
+            if self.header:
+                csv.write(','.join(self.header) + '\n')
             # write the data
             for line in self.data:
                 csv.write(line + '\n')
@@ -1484,9 +1485,7 @@ class CSV(object):
                 line.append(repr(datum))
         return ','.join(line)
 
-
 _raise_lookup = Sentinel('raise LookupError')
-
 class SelectionEnum(str, _aenum.Enum):
     _init_ = 'db user'
 
