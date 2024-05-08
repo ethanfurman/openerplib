@@ -1512,9 +1512,7 @@ class CSV(object):
                 line.append(repr(datum))
         return ','.join(line)
 
-
 _raise_lookup = Sentinel('raise LookupError')
-
 class SelectionEnum(str, _aenum.Enum):
     _init_ = 'db user'
 
