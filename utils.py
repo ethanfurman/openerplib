@@ -1276,19 +1276,25 @@ class CSV(object):
     represents a .csv file
     """
 
-    def __init__(self, filename, mode='r'):
+    def __init__(self, filename, mode='r', header=True, strict=True, null=None):
         if mode not in ('r','w'):
             raise ValueError("mode must be 'r' or 'w', not %r" % (mode, ))
         self.filename = filename
         self.mode = mode
+        self.strict = strict
+        self.null = null
         if mode == 'r':
             with codecs.open(filename, mode=mode, encoding='utf-8') as csv:
                 raw_data = csv.read().split('\n')
-            self.header = raw_data.pop(0).strip().split(',')
+            if header:
+                self.header = raw_data.pop(0).strip().split(',')
             self.data = [l.strip() for l in raw_data if l.strip()]
         else:
             self.header = []
             self.data = []
+        if not header:
+            self.header = []
+
 
     def __enter__(self):
         if self.mode == 'r':
@@ -1312,7 +1318,7 @@ class CSV(object):
     def append(self, *values):
         if isinstance(values[0], (list, tuple)):
             values = tuple(values[0])
-        if len(values) != len(self.header):
+        if self.header and len(values) != len(self.header):
             raise ValueError('%d fields required, %d value(s) given' % (len(self.header), len(values)))
         line = self.to_csv(*values)
         new_values = self.from_csv(line)
@@ -1401,7 +1407,7 @@ class CSV(object):
         final = []
         for i, field in enumerate(fields):
             if not field:
-                final.append(None)
+                final.append(self.null)
             elif field[0] == field[-1] == '"':
                 # simple string
                 final.append(field[1:-1])
@@ -1410,11 +1416,29 @@ class CSV(object):
             elif field.lower() in ('false','no','off','f'):
                 final.append(False)
             elif '-' in field and ':' in field:
-                final.append(dates.str_to_datetime(field, localtime=False))
+                try:
+                    final.append(dates.str_to_datetime(field, localtime=False))
+                except ValueError:
+                    if not self.strict:
+                        final.append(field)
+                    else:
+                        raise
             elif '-' in field:
-                final.append(Date.strptime(field, '%Y-%m-%d'))
+                try:
+                    final.append(Date.strptime(field, '%Y-%m-%d'))
+                except ValueError:
+                    if not self.strict:
+                        final.append(field)
+                    else:
+                        raise
             elif ':' in field:
-                final.append(Time.strptime(field, '%H:%M:%S'))
+                try:
+                    final.append(Time.strptime(field, '%H:%M:%S'))
+                except ValueError:
+                    if not self.strict:
+                        final.append(field)
+                    else:
+                        raise
             elif 'Many2One' in field:
                 final.append(eval(field))
             elif 'Phone' in field:
@@ -1425,25 +1449,29 @@ class CSV(object):
                 except ValueError:
                     try:
                         final.append(float(field))
-                    except:
-                        ve = ValueError('unable to determine datatype of <%r>' % (field, ))
-                        ve.__cause__ = None
-                        raise ve
+                    except ValueError:
+                        if not self.strict:
+                            final.append(field)
+                        else:
+                            ve = ValueError('unable to determine datatype of <%r>' % (field, ))
+                            ve.__cause__ = None
+                            raise ve
         return tuple(final)
 
-    def iter_map(self):
+    def iter_map(self, header=None):
+        header = self.header or header
+        if not header:
+            raise ValueError('header needed for iter_map()')
         for record in self:
             yield AttrDict(zip(self.header, record))
 
     def save(self, filename=None):
         if filename is None:
             filename = self.filename
-        # check that we have a header
-        if not self.header:
-            raise ValueError('missing header')
-        # write the header
         with codecs.open(filename, mode=self.mode, encoding='utf-8') as csv:
-            csv.write(','.join(self.header) + '\n')
+            if self.header:
+                # write the header
+                csv.write(','.join(self.header) + '\n')
             # write the data
             for line in self.data:
                 csv.write(line + '\n')
