@@ -661,7 +661,9 @@ class Query(object):
             if f_type == 'many2one':
                 for rec in main_query.records:
                     if rec[field]:
+                        v = rec[field]
                         rec[field] = sub_query.id_map[rec[field].id]
+                        rec[field]['<self>'] = v
             elif f_type in ('one2many', 'many2many'):
                 for rec in main_query.records:
                     existing = dict(
@@ -1276,12 +1278,13 @@ class CSV(object):
     represents a .csv file
     """
 
-    def __init__(self, filename, mode='r', header=True, default_type=None):
+    def __init__(self, filename, mode='r', header=True, default_type=None, null=None):
         if mode not in ('r','w'):
             raise ValueError("mode must be 'r' or 'w', not %r" % (mode, ))
         self.filename = filename
         self.mode = mode
         self.default_type = default_type
+        self.null = null
         if mode == 'r':
             with codecs.open(filename, mode=mode, encoding='utf-8') as csv:
                 raw_data = csv.read().split('\n')
@@ -1293,6 +1296,9 @@ class CSV(object):
         else:
             self.header = []
             self.data = []
+        if not header:
+            self.header = []
+
 
     def __enter__(self):
         if self.mode == 'r':
@@ -1325,7 +1331,7 @@ class CSV(object):
     def append(self, *values):
         if isinstance(values[0], (list, tuple)):
             values = tuple(values[0])
-        if header and len(values) != len(self.header):
+        if self.header and len(values) != len(self.header):
             raise ValueError('%d fields required, %d value(s) given' % (len(self.header), len(values)))
         line = self.to_csv(*values)
         new_values = self.from_csv(line)
@@ -1415,7 +1421,7 @@ class CSV(object):
         for i, field in enumerate(fields):
             try:
                 if not field:
-                    final.append(None)
+                    final.append(self.null)
                 elif field[0] == field[-1] == '"':
                     # simple string
                     final.append(field[1:-1])
@@ -1447,9 +1453,10 @@ class CSV(object):
                     raise ve
         return tuple(final)
 
-    def iter_map(self):
-        if not self.header:
-            raise ValueError("cannot create map without header")
+    def iter_map(self, header=None):
+        header = self.header or header
+        if not header:
+            raise ValueError('header needed for iter_map()')
         for record in self:
             yield AttrDict(zip(self.header, record))
 
@@ -1457,8 +1464,8 @@ class CSV(object):
         if filename is None:
             filename = self.filename
         with codecs.open(filename, mode=self.mode, encoding='utf-8') as csv:
-            # write the header (if it exists)
             if self.header:
+                # write the header
                 csv.write(','.join(self.header) + '\n')
             # write the data
             for line in self.data:
