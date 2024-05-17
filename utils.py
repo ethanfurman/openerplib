@@ -1276,16 +1276,19 @@ class CSV(object):
     represents a .csv file
     """
 
-    def __init__(self, filename, mode='r', header=True):
+    def __init__(self, filename, mode='r', header=True, default_type=None):
         if mode not in ('r','w'):
             raise ValueError("mode must be 'r' or 'w', not %r" % (mode, ))
         self.filename = filename
         self.mode = mode
+        self.default_type = default_type
         if mode == 'r':
             with codecs.open(filename, mode=mode, encoding='utf-8') as csv:
                 raw_data = csv.read().split('\n')
             if header:
                 self.header = raw_data.pop(0).strip().split(',')
+            else:
+                self.header = []
             self.data = [l.strip() for l in raw_data if l.strip()]
         else:
             self.header = []
@@ -1299,6 +1302,15 @@ class CSV(object):
     def __exit__(self, *args):
         if args == (None, None, None):
             self.save()
+
+    def __getitem__(self, index):
+        if isinstance(index, int):
+            return self.from_csv(self.data[index])
+        # better be a slice
+        lines = []
+        for line in self.data[index]:
+            lines.append(self.from_csv(line))
+        return lines
 
     def __iter__(self):
         """
@@ -1401,35 +1413,38 @@ class CSV(object):
         # convert fields to their data types
         final = []
         for i, field in enumerate(fields):
-            if not field:
-                final.append(None)
-            elif field[0] == field[-1] == '"':
-                # simple string
-                final.append(field[1:-1])
-            elif field.lower() in ('true','yes','on','t'):
-                final.append(True)
-            elif field.lower() in ('false','no','off','f'):
-                final.append(False)
-            elif '-' in field and ':' in field:
-                final.append(dates.str_to_datetime(field, localtime=False))
-            elif '-' in field:
-                final.append(Date.strptime(field, '%Y-%m-%d'))
-            elif ':' in field:
-                final.append(Time.strptime(field, '%H:%M:%S'))
-            elif 'Many2One' in field:
-                final.append(eval(field))
-            elif 'Phone' in field:
-                final.append(eval(field))
-            else:
-                try:
-                    final.append(int(field))
-                except ValueError:
+            try:
+                if not field:
+                    final.append(None)
+                elif field[0] == field[-1] == '"':
+                    # simple string
+                    final.append(field[1:-1])
+                elif field.lower() in ('true','yes','on','t'):
+                    final.append(True)
+                elif field.lower() in ('false','no','off','f'):
+                    final.append(False)
+                elif '-' in field and ':' in field:
+                    final.append(dates.str_to_datetime(field, localtime=False))
+                elif '-' in field:
+                    final.append(Date.strptime(field, '%Y-%m-%d'))
+                elif ':' in field:
+                    final.append(Time.strptime(field, '%H:%M:%S'))
+                elif 'Many2One' in field:
+                    final.append(eval(field))
+                elif 'Phone' in field:
+                    final.append(eval(field))
+                else:
                     try:
+                        final.append(int(field))
+                    except ValueError:
                         final.append(float(field))
-                    except:
-                        ve = ValueError('unable to determine datatype of <%r>' % (field, ))
-                        ve.__cause__ = None
-                        raise ve
+            except ValueError:
+                if self.default_type is not None:
+                    final.append(self.default_type(field))
+                else:
+                    ve = ValueError('unable to determine datatype of <%r>' % (field, ))
+                    ve.__cause__ = None
+                    raise ve
         return tuple(final)
 
     def iter_map(self):

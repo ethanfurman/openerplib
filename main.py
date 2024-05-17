@@ -502,7 +502,7 @@ class Model(object):
                             ]
                     for many in manies:
                         new_many = []
-                        for id in source[many]:
+                        for id in (source[many] or ()):
                             if isinstance(id, baseinteger):
                                 # new_many.append((3, id))
                                 new_many.append((4, id))
