@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-##############################################################################
-#
+
 # Copyright (C) 2015 Ethan Furman
 # All rights reserved.
 #
@@ -23,8 +22,6 @@
 # ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-##############################################################################
 
 import os as _os
 import sys as _sys
@@ -553,7 +550,7 @@ def get_records(
 
 class Query(object):
 
-    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, order=None, context=None, unique=False, constraints=(), _parent=None):
+    def __init__(self, model, ids=None, domain=ALL_RECORDS, fields=None, order=None, context=None, unique=False, to_file=None, constraints=(), _parent=None):
         # fields may be modified (reminder: changes will be seen by caller)
         if context is None:
             context = {}
@@ -570,6 +567,8 @@ class Query(object):
         #
         # save current fields as ordering information since fields itself may be modified
         self.order = fields[:]
+        self.fields = self.order
+        self.to_file = to_file
         # create a field name to display name mapping
         if _parent is None:
             parent_field, parent_display = '', ''
@@ -1285,8 +1284,9 @@ class CSV(object):
         self.mode = mode
         self.default_type = default_type
         self.null = null
+        self.use_header = header
         if mode == 'r':
-            with codecs.open(filename, mode=mode, encoding='utf-8') as csv:
+            with codecs.open(filename, mode='r', encoding='utf-8') as csv:
                 raw_data = csv.read().split('\n')
             if header:
                 self.header = raw_data.pop(0).strip().split(',')
@@ -1301,12 +1301,10 @@ class CSV(object):
 
 
     def __enter__(self):
-        if self.mode == 'r':
-            raise TypeError("CSV must be opened for writing to be used as a context manager")
         return self
 
     def __exit__(self, *args):
-        if args == (None, None, None):
+        if args == (None, None, None) and self.mode == 'w':
             self.save()
 
     def __getitem__(self, index):
@@ -1463,7 +1461,7 @@ class CSV(object):
     def save(self, filename=None):
         if filename is None:
             filename = self.filename
-        with codecs.open(filename, mode=self.mode, encoding='utf-8') as csv:
+        with codecs.open(filename, mode='w', encoding='utf-8') as csv:
             if self.header:
                 # write the header
                 csv.write(','.join(self.header) + '\n')
@@ -1594,4 +1592,3 @@ class SelectionEnum(str, _aenum.Enum):
             if default is not _raise_lookup:
                 return default
         raise LookupError('%r not found in %s' % (text, cls.__name__))
-
