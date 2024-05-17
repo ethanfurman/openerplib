@@ -661,7 +661,9 @@ class Query(object):
             if f_type == 'many2one':
                 for rec in main_query.records:
                     if rec[field]:
+                        v = rec[field]
                         rec[field] = sub_query.id_map[rec[field].id]
+                        rec[field]['<self>'] = v
             elif f_type in ('one2many', 'many2many'):
                 for rec in main_query.records:
                     existing = dict(
