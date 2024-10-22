@@ -208,11 +208,14 @@ class AttrDict(object):
         return hash(tuple(sorted(self._keys)))
 
     def __eq__(self, other):
-        if isinstance(other, AttrDict):
-            other = other._values
-        elif not isinstance(other, dict):
-            return NotImplemented
-        return other == self._values
+        try:
+            if isinstance(other, AttrDict):
+                other = other._values
+            elif not isinstance(other, dict):
+                return NotImplemented
+            return other == self._values
+        except UnicodeWarning:
+            return False
 
     def __ne__(self, other):
         result = self == other
