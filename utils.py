@@ -556,6 +556,7 @@ class Query(object):
             context = {}
         if fields is None:
             raise ValueError('FIELDS must be given')
+        self.name = model.model_name
         if ids:
             if domain and domain != ALL_RECORDS:
                 raise ValueError('Cannot specify both ids and domain (%r and %r)' % (ids, domain))
