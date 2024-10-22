@@ -561,13 +561,13 @@ class Model(object):
                         ]
                 for many in manies:
                     new_many = []
-                    for id in values[many]:
+                    for id in (values[many] or []):
                         if isinstance(id, baseinteger):
                             # new_many.append((3, id))
                             new_many.append((4, id))
                         else:
                             new_many.append(id)
-                    values[many] = new_many
+                    values[many] = new_many or False
                 args = (ids, values) + args[2:]
             #
             # ensure everything is marshalable
